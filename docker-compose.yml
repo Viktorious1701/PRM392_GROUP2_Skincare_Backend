@@ -16,7 +16,7 @@
     image: postgres:17
     container_name: skincare.db
     ports:
-      - "5432:5432"
+      - "5431:5432"
     environment:
       - POSTGRES_DB=skincare
       - POSTGRES_USER=admin
