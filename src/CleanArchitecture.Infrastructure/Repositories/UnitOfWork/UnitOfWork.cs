@@ -1,4 +1,5 @@
-﻿using CleanArchitecture.Application.ServiceContracts;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Infrastructure/Repositories/UnitOfWork/UnitOfWork.cs
+using CleanArchitecture.Application.ServiceContracts;
 using CleanArchitecture.Domain.RepositoryContracts;
 using CleanArchitecture.Domain.RepositoryContracts.UnitOfWork;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -16,7 +17,7 @@ public class UnitOfWork : IUnitOfWork
 
   #region Repositories
 
-  public IBatchRepository Batches  => new BatchRepository(_context);
+  public IBatchRepository Batches => new BatchRepository(_context);
   public IBlogRepository Blogs => new BlogRepository(_context);
   public IBlogTagRepository BlogTags => new BlogTagRepository(_context);
   public IBrandRepository Brands => new BrandRepository(_context);
@@ -48,12 +49,13 @@ public class UnitOfWork : IUnitOfWork
   public IRoutineRepository Routines => new RoutineRepository(_context);
   public IRoutineStepRepository RoutineSteps => new RoutineStepRepository(_context);
   public ISkinTypeRepository SkinTypes => new SkinTypeRepository(_context);
+  public IStoreRepository Stores => new StoreRepository(_context); // Add Store Repository Implementation
   public ISubCategoryRepository SubCategories => new SubCategoryRepository(_context);
   public ITagRepository Tags => new TagRepository(_context);
   public ITestimonialRepository Testimonials => new TestimonialRepository(_context);
   public IUserRepository Users => new UserRepository(_context);
   public IUserCouponRepository UserCoupons => new UserCouponRepository(_context);
-  public IPlayLogRepository PlayLogs =>  new PlayLogRepository(_context);
+  public IPlayLogRepository PlayLogs => new PlayLogRepository(_context);
 
   #endregion
 
