@@ -46,7 +46,7 @@ public static class DependencyInjection
        //options.UseInMemoryDatabase("database");
       options.UseNpgsql(connectionString);
     });
-
+    services.AddHttpClient("Gemini");
     // GUIDE: Put azure.env file in the CleanArchitecture.Presentation directory
     Env.Load("azure.env");
     string? azureBlobConnectionString = Environment.GetEnvironmentVariable("azureBlobConnectionString");
@@ -105,6 +105,7 @@ public static class DependencyInjection
     services.AddScoped<ITestimonialRepository, TestimonialRepository>();
     services.AddScoped<IEventRepository, EventRepository>();
     services.AddScoped<ICosmeticPriceRepository, CosmeticPriceRepository>();
+    services.AddScoped<IStoreRepository, StoreRepository>(); // Add Store Repository
     #endregion
 
     // Register Redis Caching

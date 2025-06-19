@@ -37,6 +37,7 @@ public interface IUnitOfWork : IDisposable
   IRoutineRepository Routines { get; }
   IRoutineStepRepository RoutineSteps { get; } 
   ISkinTypeRepository SkinTypes { get; }
+  IStoreRepository Stores { get; } // Add Store Repository
   ISubCategoryRepository SubCategories { get; }
   ITagRepository Tags { get; }
   ITestimonialRepository Testimonials { get; }

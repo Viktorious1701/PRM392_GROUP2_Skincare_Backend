@@ -1,10 +1,12 @@
-﻿using CleanArchitecture.Application.DTOs.BatchDto;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Application/DTOs/Cosmetic/CosmeticResponse.cs
+using CleanArchitecture.Application.DTOs.BatchDto;
 using CleanArchitecture.Application.DTOs.BrandDto;
 using CleanArchitecture.Application.DTOs.CosmeticImageDto;
 using CleanArchitecture.Application.DTOs.CosmeticSubcategory;
 using CleanArchitecture.Application.DTOs.CosmeticTypeDto;
 using CleanArchitecture.Application.DTOs.FeedbackDto;
 using CleanArchitecture.Application.DTOs.SkinTypeDto;
+using CleanArchitecture.Application.DTOs.Store;
 using System.Text.Json.Serialization;
 namespace CleanArchitecture.Application.DTOs.Cosmetic
 {
@@ -35,6 +37,7 @@ namespace CleanArchitecture.Application.DTOs.Cosmetic
     public int Height { get; set; }
     public string? ThumbnailUrl { get; set; }
     public VolumeUnit VolumeUnit { get; set; }
+    public StoreResponse? Store { get; set; } // Include store information
     public List<CosmeticSubcategoryResponse>? CosmeticSubcategories { get; set; }
     public List<CosmeticImageResponse>? CosmeticImages { get; set; }
     public List<FeedbackCosmeticResponse>? Feedbacks { get; set; }

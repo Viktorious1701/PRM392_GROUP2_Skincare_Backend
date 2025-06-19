@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Application/DTOs/Cosmetic/CreateCosmetic.cs
+using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -16,6 +17,7 @@ namespace CleanArchitecture.Application.DTOs.Cosmetic
     public Guid SkinTypeId { get; init; }
     [Required]
     public Guid CosmeticTypeId { get; init; }
+    public Guid? StoreId { get; init; } // Add StoreId
     [Required]
     public string Name { get; init; } = default!;
     [Range(0, double.MaxValue)]

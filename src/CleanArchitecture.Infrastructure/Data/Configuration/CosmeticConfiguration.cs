@@ -20,6 +20,12 @@ namespace CleanArchitecture.Infrastructure.Data.Configuration
         .WithMany(ct => ct.Cosmetics)
         .HasForeignKey(c => c.CosmeticTypeId);
 
+      // Add this relationship configuration
+      builder.HasOne(c => c.Store)
+        .WithMany(s => s.Cosmetics)
+        .HasForeignKey(c => c.StoreId)
+        .IsRequired(false); // Makes the relationship optional
+
       builder.HasMany(cosmetic => cosmetic.CosmeticSubcategories)
         .WithOne(orderItem => orderItem.Cosmetic);
 

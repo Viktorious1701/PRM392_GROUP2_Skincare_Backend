@@ -51,7 +51,8 @@ public class ApplicationDbContext : IdentityDbContext<User, Role, Guid>, IApplic
   public DbSet<RefundItem> RefundItems => Set<RefundItem>();  
   public DbSet<Routine> Routines => Set<Routine>();
   public DbSet<RoutineStep> RoutineSteps => Set<RoutineStep>();
-  public DbSet<SkinType> SkinTypes => Set<SkinType>();  
+  public DbSet<SkinType> SkinTypes => Set<SkinType>();
+  public DbSet<Store> Stores => Set<Store>(); // Add DbSet for Store
   public DbSet<SubCategory> SubCategories => Set<SubCategory>();
   public DbSet<Tag> Tags => Set<Tag>();
   public DbSet<Testimonial> Testimonials => Set<Testimonial>();

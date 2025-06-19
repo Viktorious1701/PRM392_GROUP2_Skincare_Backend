@@ -67,9 +67,13 @@ public static class DependencyInjection
     services.AddScoped<IErrorFactory, ErrorFactory>();
     services.AddScoped<IReportService, ReportService>();
     services.AddScoped<IEventService, EventService>();
+    services.AddScoped<IStoreService, StoreService>(); // Add Store Service
 
     // Add HttpClient for GHNService
     services.AddHttpClient<IGHNService, GHNService>();
+
+    // Add HttpClient for GeminiService
+    services.AddScoped<IChatService, ChatService>();
 
     #region Add Strategies
 
