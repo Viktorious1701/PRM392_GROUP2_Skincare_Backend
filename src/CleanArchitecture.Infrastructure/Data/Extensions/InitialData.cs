@@ -91,7 +91,40 @@ internal class InitialData
     new Role { Id = new Guid("C459402C-64CB-4D36-9238-60B15462CE25"), Name = "Staff" },
     new Role { Id = new Guid("D586839A-B80C-4EBB-8488-95CDD857D1BF"), Name = "Manager" }
   };
-
+  // Add new static property for Store data
+  public static IEnumerable<Store> Stores => new List<Store>
+    {
+        new Store
+        {
+            Id = new Guid("1f9b3070-5527-4a0b-9a67-a068a658a5c3"),
+            Name = "De Fleur Flagship Store",
+            Address = "123 Le Loi, District 1, Ho Chi Minh City",
+            Latitude = 10.7752,
+            Longitude = 106.7019,
+            PhoneNumber = "028-1111-2222",
+            OpeningHours = "9:00 AM - 10:00 PM"
+        },
+        new Store
+        {
+            Id = new Guid("8e217e3a-e998-44e5-905d-1616f7f25977"),
+            Name = "De Fleur Crescent Mall",
+            Address = "101 Ton Dat Tien, Tan Phu, District 7, Ho Chi Minh City",
+            Latitude = 10.7290,
+            Longitude = 106.7161,
+            PhoneNumber = "028-3333-4444",
+            OpeningHours = "10:00 AM - 9:30 PM"
+        },
+        new Store
+        {
+            Id = new Guid("a4f4b4e2-632b-4e1d-8c44-59e5e2e8e4c7"),
+            Name = "De Fleur Vincom Center",
+            Address = "72 Le Thanh Ton, Ben Nghe, District 1, Ho Chi Minh City",
+            Latitude = 10.7783,
+            Longitude = 106.7025,
+            PhoneNumber = "028-5555-6666",
+            OpeningHours = "9:30 AM - 10:00 PM"
+        }
+    };
   public static IEnumerable<Batch> Batches
   {
     get
@@ -524,6 +557,7 @@ internal class InitialData
       var brands = Brands.ToList();
       var skinTypes = SkinTypes.ToList();
       var cosmeticTypes = CosmeticTypes.ToList();
+      var stores = Stores.ToList(); // Get the list of stores to assign their IDs
 
       var guids = new List<Guid>
       {
@@ -637,13 +671,14 @@ internal class InitialData
         int sunscreenBrandIndex = rand.Next(brands.Count);
         int retinoidBrandIndex = rand.Next(brands.Count);
 
-        // Cleanser for this skin type
+        // Cleanser for this skin type - Linked to the first store
         cosmetics.Add(new Cosmetic
         {
           Id = guids[guidIndex++],
           Name = $"{brands[cleanserBrandIndex].Name} {skin.Name} Cleanser",
           BrandId = brands[cleanserBrandIndex].Id,
           SkinTypeId = skin.Id,
+          StoreId = stores[0].Id, // Link to the first store
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Cleansers").Id,
           Gender = true,
           Notice = "A gentle cleanser to prepare the skin.",
@@ -659,13 +694,14 @@ internal class InitialData
           VolumeUnit = (VolumeUnit)0
         });
 
-        // Moisturizer for this skin type
+        // Moisturizer for this skin type - Linked to the second store
         cosmetics.Add(new Cosmetic
         {
           Id = guids[guidIndex++],
           Name = $"{brands[moisturizerBrandIndex].Name} {skin.Name} Moisturizer",
           BrandId = brands[moisturizerBrandIndex].Id,
           SkinTypeId = skin.Id,
+          StoreId = stores[1].Id, // Link to the second store
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Moisturizers").Id,
           Gender = true,
           Notice = "Hydrates and nourishes the skin.",
@@ -681,13 +717,14 @@ internal class InitialData
           VolumeUnit = (VolumeUnit)0
         });
 
-        // Sunscreen for this skin type
+        // Sunscreen for this skin type - Linked to the third store
         cosmetics.Add(new Cosmetic
         {
           Id = guids[guidIndex++],
           Name = $"{brands[sunscreenBrandIndex].Name} {skin.Name} Sunscreen",
           BrandId = brands[sunscreenBrandIndex].Id,
           SkinTypeId = skin.Id,
+          StoreId = stores[2].Id, // Link to the third store
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Sunscreens").Id,
           Gender = true,
           Notice = "Provides broad-spectrum protection.",
@@ -703,13 +740,14 @@ internal class InitialData
           VolumeUnit = (VolumeUnit)0
         });
 
-        // Retinoid (using the Serums type) for this skin type
+        // Retinoid (using the Serums type) for this skin type - No store assigned
         cosmetics.Add(new Cosmetic
         {
           Id = guids[guidIndex++],
           Name = $"{brands[retinoidBrandIndex].Name} {skin.Name} Anti-Aging Retinoid",
           BrandId = brands[retinoidBrandIndex].Id,
           SkinTypeId = skin.Id,
+          StoreId = null, // No store assigned
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Serums").Id,
           Gender = true,
           Notice = "Helps reduce wrinkles and improve skin texture.",
@@ -726,6 +764,7 @@ internal class InitialData
         });
       }
 
+      // Add the extra cosmetics with some linked to stores
       cosmetics.AddRange(new List<Cosmetic>
       {
         new Cosmetic
@@ -734,6 +773,7 @@ internal class InitialData
           Name = $"{brands[0].Name} Hydrating Face Cream",
           BrandId = brands[0].Id,
           SkinTypeId = skinTypes[0].Id,
+          StoreId = stores[0].Id, // Link to Flagship Store
           CosmeticTypeId = cosmeticTypes[0].Id,
           Gender = true,
           Notice = "Apply twice daily for best results.",
@@ -754,6 +794,7 @@ internal class InitialData
           Name = $"{brands[2].Name} Gentle Facial Cleanser",
           BrandId = brands[2].Id,
           SkinTypeId = skinTypes[1].Id,
+          StoreId = stores[1].Id, // Link to Crescent Mall Store
           CosmeticTypeId = cosmeticTypes[1].Id,
           Gender = true,
           Notice = "Suitable for daily use.",
@@ -774,6 +815,7 @@ internal class InitialData
           Name = $"{brands[3].Name} Revitalizing Serum",
           BrandId = brands[3].Id,
           SkinTypeId = skinTypes[1].Id,
+          StoreId = null, // No store
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Serums").Id,
           Gender = true,
           Notice = "Apply a few drops after cleansing.",
@@ -782,186 +824,6 @@ internal class InitialData
           Texture = "Light Gel",
           Origin = "France",
           Instructions = "Apply 2-3 drops on cleansed skin, morning and night.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)0
-        },
-        new Cosmetic
-        {
-          Id = new Guid("3A7DFA4B-E4C7-430D-9B0B-AC2E341602C4"),
-          Name = $"{brands[4].Name} Hydrating Moisturizer",
-          BrandId = brands[4].Id,
-          SkinTypeId = skinTypes[2].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Moisturizers").Id,
-          Gender = true,
-          Notice = "Locks in moisture for all-day hydration.",
-          Ingredients = "Glycerin, Hyaluronic Acid, Ceramides",
-          MainUsage = "Hydration and nourishment",
-          Texture = "Cream",
-          Origin = "Germany",
-          Instructions = "Apply evenly to face and neck after cleansing.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)0
-        },
-        new Cosmetic
-        {
-          Id = new Guid("8877B094-53E7-4A6E-8A10-7A47A805311F"),
-          Name = $"{brands[1].Name} Soothing Toner",
-          BrandId = brands[1].Id,
-          SkinTypeId = skinTypes[0].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Toners").Id,
-          Gender = true,
-          Notice = "Balances skin pH and preps skin for moisturizer.",
-          Ingredients = "Witch Hazel, Aloe Vera, Glycerin",
-          MainUsage = "Toning and refreshing the skin",
-          Texture = "Liquid",
-          Origin = "USA",
-          Instructions = "Apply with a cotton pad after cleansing.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)0
-        },
-        new Cosmetic
-        {
-          Id = new Guid("2125C657-3ACA-4960-B4C5-DA0DB91B1968"),
-          Name = $"{brands[0].Name} Exfoliating Scrub",
-          BrandId = brands[0].Id,
-          SkinTypeId = skinTypes[0].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Exfoliators").Id,
-          Gender = true,
-          Notice = "Use 2-3 times a week for smooth skin.",
-          Ingredients = "Sugar, Jojoba Beads, Natural Extracts",
-          MainUsage = "Exfoliation and smoothing skin texture",
-          Texture = "Scrub",
-          Origin = "USA",
-          Instructions = "Gently massage on damp skin and rinse off.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)1
-        },
-        new Cosmetic
-        {
-          Id = new Guid("3F0FE941-D7F6-433D-AD8E-F0003AAAA75C"),
-          Name = $"{brands[1].Name} Nourishing Night Cream",
-          BrandId = brands[1].Id,
-          SkinTypeId = skinTypes[2].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Moisturizers").Id,
-          Gender = true,
-          Notice = "For overnight skin repair and nourishment.",
-          Ingredients = "Peptides, Antioxidants, Hyaluronic Acid",
-          MainUsage = "Deep hydration and skin regeneration",
-          Texture = "Rich Cream",
-          Origin = "Italy",
-          Instructions = "Apply evenly to clean skin before bed.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)0
-        },
-        new Cosmetic
-        {
-          Id = new Guid("AF48F533-2AF5-4A28-BEFD-24CB3F851218"),
-          Name = $"{brands[4].Name} Brightening Eye Cream",
-          BrandId = brands[4].Id,
-          SkinTypeId = skinTypes[0].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Eye Creams").Id,
-          Gender = true,
-          Notice = "Reduces dark circles and puffiness.",
-          Ingredients = "Caffeine, Vitamin E, Peptides",
-          MainUsage = "Brightening and firming the eye area",
-          Texture = "Gel-Cream",
-          Origin = "France",
-          Instructions = "Gently tap around the eye area using your ring finger.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)0
-        },
-        new Cosmetic
-        {
-          Id = new Guid("103ED5BE-D2D4-4C24-8DF9-B854CAAE48D1"),
-          Name = $"{brands[1].Name} UV Protection Sunscreen",
-          BrandId = brands[1].Id,
-          SkinTypeId = skinTypes[2].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Sunscreens").Id,
-          Gender = true,
-          Notice = "Broad spectrum SPF 50 for daily protection.",
-          Ingredients = "Zinc Oxide, Titanium Dioxide, Vitamin E",
-          MainUsage = "Sun protection and prevention of premature aging",
-          Texture = "Lotion",
-          Origin = "USA",
-          Instructions = "Apply generously 15 minutes before sun exposure.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)0
-        },
-        new Cosmetic
-        {
-          Id = new Guid("CBEDBE89-9EC6-4487-9481-789A90575B3A"),
-          Name = $"{brands[0].Name} Soothing Lip Balm",
-          BrandId = brands[0].Id,
-          SkinTypeId = skinTypes[0].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Lip Care Products").Id,
-          Gender = true,
-          Notice = "Keeps lips moisturized and smooth.",
-          Ingredients = "Beeswax, Shea Butter, Vitamin E",
-          MainUsage = "Lip hydration and care",
-          Texture = "Balm",
-          Origin = "USA",
-          Instructions = "Apply to lips as needed throughout the day.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)2
-        },
-        new Cosmetic
-        {
-          Id = new Guid("3AF3131D-6996-4EC7-8FEC-64A53C8B3C7E"),
-          Name = $"{brands[1].Name} Hydrating Face Mask",
-          BrandId = brands[1].Id,
-          SkinTypeId = skinTypes[2].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Face Masks").Id,
-          Gender = true,
-          Notice = "Instant hydration boost.",
-          Ingredients = "Aloe, Hyaluronic Acid, Vitamins",
-          MainUsage = "Hydration and revitalization",
-          Texture = "Sheet Mask",
-          Origin = "South Korea",
-          Instructions = "Apply for 15-20 minutes, then remove and pat remaining essence.",
-          Weight = rand.Next(50, 500),
-          Length = rand.Next(5, 20),
-          Width = rand.Next(5, 20),
-          Height = rand.Next(5, 20),
-          VolumeUnit = (VolumeUnit)2
-        },
-        new Cosmetic
-        {
-          Id = new Guid("8B4343AB-99C1-49C4-92A8-18D44556CDFA"),
-          Name = $"{brands[3].Name} Anti-Aging Retinoid",
-          BrandId = brands[3].Id,
-          SkinTypeId = skinTypes[3].Id,
-          CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Serums").Id,
-          Gender = true,
-          Notice = "Apply at night.",
-          Ingredients = "Retinol, Hyaluronic Acid",
-          MainUsage = "Reduces fine lines and prevents acne",
-          Texture = "Cream",
-          Origin = "USA",
-          Instructions = "Apply a pea-sized amount to cleansed skin at night.",
           Weight = rand.Next(50, 500),
           Length = rand.Next(5, 20),
           Width = rand.Next(5, 20),
