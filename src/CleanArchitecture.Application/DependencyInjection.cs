@@ -72,6 +72,9 @@ public static class DependencyInjection
     // Add HttpClient for GHNService
     services.AddHttpClient<IGHNService, GHNService>();
 
+    // Add HttpClient for GeminiService
+    services.AddScoped<IChatService, ChatService>();
+
     #region Add Strategies
 
     services.AddSingleton<IBlogFilterStrategy, ContentFilterStrategy>();
