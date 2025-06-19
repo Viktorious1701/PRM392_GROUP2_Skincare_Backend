@@ -1,4 +1,5 @@
-﻿using CleanArchitecture.Application.Constants;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Application/Services/CosmeticService.cs
+using CleanArchitecture.Application.Constants;
 using CleanArchitecture.Application.DTOs.AzureBlob;
 using CleanArchitecture.Application.DTOs.BatchDto;
 using CleanArchitecture.Application.DTOs.BrandDto;
@@ -8,6 +9,7 @@ using CleanArchitecture.Application.DTOs.CosmeticSubcategory;
 using CleanArchitecture.Application.DTOs.CosmeticTypeDto;
 using CleanArchitecture.Application.DTOs.FeedbackDto;
 using CleanArchitecture.Application.DTOs.SkinTypeDto;
+using CleanArchitecture.Application.DTOs.Store;
 using CleanArchitecture.Application.Factories.FilePathFactory;
 using CleanArchitecture.Application.Interfaces;
 using CleanArchitecture.Application.Strategies.BlogFilterStrategy;
@@ -52,11 +54,19 @@ namespace CleanArchitecture.Application.Services
         orgcosmetic.BrandId = request.BrandId;
         orgcosmetic.SkinTypeId = request.SkinTypeId;
         orgcosmetic.CosmeticTypeId = request.CosmeticTypeId;
+        orgcosmetic.StoreId = request.StoreId; // Assign StoreId
 
         // Attach existing related entities to avoid re-adding them
         orgcosmetic.Brand = new Brand { Id = request.BrandId };
         orgcosmetic.SkinType = new SkinType { Id = request.SkinTypeId };
         orgcosmetic.CosmeticType = new CosmeticType { Id = request.CosmeticTypeId };
+
+        // Only attach store if StoreId is provided
+        if (request.StoreId.HasValue)
+        {
+          orgcosmetic.Store = new Store { Id = request.StoreId.Value };
+          _unitOfWork.Stores.Attach(orgcosmetic.Store);
+        }
 
         _unitOfWork.Brands.Attach(orgcosmetic.Brand);
         _unitOfWork.SkinTypes.Attach(orgcosmetic.SkinType);
@@ -151,7 +161,8 @@ namespace CleanArchitecture.Application.Services
         // Now apply only the necessary includes
         var query = baseQuery
             .Include(c => c.CosmeticImages)
-            .Include(c => c.Feedbacks);
+            .Include(c => c.Feedbacks)
+            .Include(c => c.Store); // Eagerly load the Store navigation property.
 
         // Project to a simplified response DTO with only the needed fields
         var cosmeticResponseQuery = query.Select(c => new CosmeticResponse
@@ -179,12 +190,23 @@ namespace CleanArchitecture.Application.Services
           Height = c.Height,
           ThumbnailUrl = c.ThumbnailUrl,
           VolumeUnit = c.VolumeUnit,
+          // Explicitly map the Store entity to the StoreResponse DTO.
+          Store = c.Store == null ? null : new StoreResponse
+          {
+            Id = c.Store.Id,
+            Name = c.Store.Name,
+            Address = c.Store.Address,
+            Latitude = c.Store.Latitude,
+            Longitude = c.Store.Longitude,
+            PhoneNumber = c.Store.PhoneNumber,
+            OpeningHours = c.Store.OpeningHours
+          },
           CosmeticSubcategories = c.CosmeticSubcategories.Select(cs => new CosmeticSubcategoryResponse
           {
             CosmeticId = cs.CosmeticId,
             SubCategoryId = cs.SubCategoryId
           }).ToList(),
-          CosmeticImages = c.CosmeticImages.Select(ci => new CosmeticImageResponse() 
+          CosmeticImages = c.CosmeticImages.Select(ci => new CosmeticImageResponse()
           {
             Id = ci.Id,
             ImageUrl = ci.ImageUrl,
@@ -232,7 +254,11 @@ namespace CleanArchitecture.Application.Services
 
     public async Task<Result<CosmeticResponse>> GetCosmeticById(Guid id)
     {
-      var cosmetic = await _unitOfWork.Cosmetics.GetByIdAsync(id);
+      // Updated to include the Store information
+      var cosmetic = await _unitOfWork.Cosmetics.GetQueryable()
+          .Include(c => c.Store)
+          .FirstOrDefaultAsync(c => c.Id == id);
+
       if (cosmetic != null)
       {
         var cosmeticResponse = cosmetic.Adapt<CosmeticResponse>();
@@ -247,8 +273,8 @@ namespace CleanArchitecture.Application.Services
           CosmeticId = cosmetic.Id,
           CosmeticName = cosmetic.Name
         }).ToList();
-        
-        cosmeticResponse.CosmeticImages = imagesDto; 
+
+        cosmeticResponse.CosmeticImages = imagesDto;
 
         return Result<CosmeticResponse>.Success(cosmeticResponse, StatusCodes.Status200OK);
       }
@@ -459,7 +485,7 @@ namespace CleanArchitecture.Application.Services
     {
       var validationResult = await _cosmeticImagesUploadValidator.ValidateAsync(request);
       if (!validationResult.IsValid)
-      { 
+      {
         var errors = _errorFactory.CreateValidationError("Images", validationResult);
         return Result<CosmeticResponse>.Failure(errors.errs, errors.statusCode);
       }
@@ -506,7 +532,8 @@ namespace CleanArchitecture.Application.Services
 
       var cosmeticImages = uploadedUrls.Select(url => new CosmeticImage
       {
-        CosmeticId = request.CosmeticId, ImageUrl = url.ToString()
+        CosmeticId = request.CosmeticId,
+        ImageUrl = url.ToString()
       }).ToList();
 
       foreach (var cosmeticImage in cosmeticImages)
@@ -521,7 +548,7 @@ namespace CleanArchitecture.Application.Services
             if (!isDeleted)
               return Result<CosmeticResponse>.Failure([new Error("CosmeticThumbnail.DeletedFailed", "Thumbnail deleted failed.")], StatusCodes.Status500InternalServerError);
           }
-          
+
           cosmetic.ThumbnailUrl = cosmeticImage.ImageUrl;
           break;
         }
