@@ -142,7 +142,7 @@ public class AuthController : ICarterModule
     #region External Login API
     group.MapGet("/external-login", ([FromQuery] string provider) =>
     {
-      var redirectUrl = "https://api.pak160404.click/api/auth";
+      var redirectUrl = "https://localhost:5051/api/auth";
       switch (provider)
       {
         case "Google":

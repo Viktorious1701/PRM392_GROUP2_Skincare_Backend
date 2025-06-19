@@ -19,6 +19,7 @@ public class AuthService : IAuthService
   private readonly IValidator<ForgotPasswordRequest> _forgotPasswordValidator;
   private readonly IValidator<ResetPasswordRequest> _resetPasswordValidator;
   private readonly IValidator<DTOs.Auth.RefreshTokenRequest> _refreshTokenValidator;
+  private readonly ILogger<AuthService> _logger;
 
   public AuthService(UserManager<User> userManager,
                      IEmailService emailService,
@@ -28,7 +29,8 @@ public class AuthService : IAuthService
                      IValidator<ForgotPasswordRequest> forgotPasswordValidator,
                      IValidator<ResetPasswordRequest> resetPasswordValidator,
                      IValidator<DTOs.Auth.RefreshTokenRequest> refreshTokenValidator,
-                     IHttpContextAccessor httpContextAccessor
+                     IHttpContextAccessor httpContextAccessor,
+                     ILogger<AuthService> logger
                      )
   {
     _userManager = userManager;
@@ -40,6 +42,17 @@ public class AuthService : IAuthService
     _resetPasswordValidator = resetPasswordValidator;
     _refreshTokenValidator = refreshTokenValidator;
     _httpContextAccessor = httpContextAccessor;
+    _logger = logger;
+  }
+
+  private string GetAuthority()
+  {
+    var request = _httpContextAccessor.HttpContext?.Request;
+    if (request == null)
+    {
+      throw new InvalidOperationException("HttpContext is not available.");
+    }
+    return $"{request.Scheme}://{request.Host}";
   }
 
   public async Task<Result<string>> ForgotPasswordAsync(ForgotPasswordRequest request)
@@ -173,43 +186,64 @@ public class AuthService : IAuthService
       var errors = validationResult.Errors
           .Select(e => new Error("ValidationError", e.ErrorMessage))
           .ToList();
-
       return Result<AuthResponse>.Failure(errors, StatusCodes.Status400BadRequest);
     }
 
     var user = await _userManager.FindByNameAsync(request.UserName!);
-    if (user == null || !await _userManager.CheckPasswordAsync(user, request.Password!))
+    if (user == null)
     {
       return Result<AuthResponse>.Failure([AuthErrors.InvalidCredentials], StatusCodes.Status400BadRequest);
     }
 
+    if (await _userManager.IsLockedOutAsync(user))
+    {
+      return Result<AuthResponse>.Failure([AuthErrors.UserNotFound], StatusCodes.Status423Locked);
+    }
+
     var client = _httpClientFactory.CreateClient();
-    var disco = await client.GetDiscoveryDocumentAsync("https://api.pak160404.click");
+    var authority = GetAuthority();
+    var disco = await client.GetDiscoveryDocumentAsync(authority);
     if (disco.IsError)
     {
+      _logger.LogError("Discovery document error: {Error}", disco.Error);
       return Result<AuthResponse>.Failure([AuthErrors.IdentityServerFailed], StatusCodes.Status500InternalServerError);
     }
 
     var tokenResponse = await client.RequestPasswordTokenAsync(new PasswordTokenRequest
     {
       Address = disco.TokenEndpoint,
-
       ClientId = "api_client",
       ClientSecret = "secret",
-
-      UserName = user.UserName!,
+      UserName = request.UserName,
       Password = request.Password,
-
       Scope = "openid profile email roles API offline_access"
     });
 
     if (tokenResponse.IsError)
     {
+      if (tokenResponse.Error == "invalid_grant")
+      {
+        var potentiallyLockedUser = await _userManager.FindByNameAsync(request.UserName!);
+        if (potentiallyLockedUser != null && await _userManager.IsLockedOutAsync(potentiallyLockedUser))
+        {
+          return Result<AuthResponse>.Failure([AuthErrors.UserNotFound], StatusCodes.Status423Locked);
+        }
+        return Result<AuthResponse>.Failure([AuthErrors.InvalidCredentials], StatusCodes.Status400BadRequest);
+      }
+
+      _logger.LogError("Token response error: {Error}", tokenResponse.Error);
       return Result<AuthResponse>.Failure([AuthErrors.TokenResponseError(tokenResponse.ErrorDescription!)], StatusCodes.Status400BadRequest);
     }
 
-    user.RefreshToken = tokenResponse.RefreshToken;
-    user.RefreshTokenExpiration = DateTime.UtcNow + TimeSpan.FromDays(30);
+    var freshUser = await _userManager.FindByNameAsync(request.UserName!);
+    if (freshUser == null)
+    {
+      return Result<AuthResponse>.Failure([AuthErrors.UserNotFound], StatusCodes.Status500InternalServerError);
+    }
+
+    freshUser.RefreshToken = tokenResponse.RefreshToken;
+    freshUser.RefreshTokenExpiration = DateTime.UtcNow + TimeSpan.FromDays(30);
+    await _userManager.UpdateAsync(freshUser);
 
     return Result<AuthResponse>.Success(new AuthResponse
     {
@@ -217,8 +251,8 @@ public class AuthService : IAuthService
       AccessTokenExpiration = tokenResponse.ExpiresIn,
       RefreshToken = tokenResponse.RefreshToken!,
       RefreshTokenExpiration = 2592000,
-      Email = user.Email!,
-      UserName = user.UserName!,
+      Email = freshUser.Email!,
+      UserName = freshUser.UserName!,
     }, StatusCodes.Status200OK);
   }
 
@@ -243,9 +277,11 @@ public class AuthService : IAuthService
     var user = await _userManager.FindByIdAsync(id);
 
     var client = _httpClientFactory.CreateClient();
-    var disco = await client.GetDiscoveryDocumentAsync("https://api.pak160404.click/");
+    var authority = GetAuthority();
+    var disco = await client.GetDiscoveryDocumentAsync(authority);
     if (disco.IsError)
     {
+      _logger.LogError("Discovery document error: {Error}", disco.Error);
       return Result<AuthResponse>.Failure([AuthErrors.IdentityServerFailed], StatusCodes.Status500InternalServerError);
     }
 
@@ -267,6 +303,7 @@ public class AuthService : IAuthService
 
     user!.RefreshToken = tokenResponse.RefreshToken;
     user.RefreshTokenExpiration = DateTime.UtcNow + TimeSpan.FromDays(30);
+    await _userManager.UpdateAsync(user);
 
     return Result<AuthResponse>.Success(new AuthResponse
     {
@@ -321,31 +358,6 @@ public class AuthService : IAuthService
       var errors = roleResult.Errors.Select(e => new Error(e.Code, e.Description)).ToList();
       return Result<string>.Failure(errors, StatusCodes.Status500InternalServerError);
     }
-
-    //var client = _httpClientFactory.CreateClient();
-    //var disco = await client.GetDiscoveryDocumentAsync("https://0.0.0.0:5051/");
-    //if (disco.IsError)
-    //{
-    //  return Result<string>.Failure([AuthErrors.IdentityServerFailed], StatusCodes.Status500InternalServerError);
-    //}
-
-    //var tokenResponse = await client.RequestPasswordTokenAsync(new PasswordTokenRequest
-    //{
-    //  Address = disco.TokenEndpoint,
-
-    //  ClientId = "api_client",
-    //  ClientSecret = "secret",
-
-    //  UserName = user.UserName,
-    //  Password = registerRequest.Password,
-
-    //  Scope = "openid profile email roles API offline_access"
-    //});
-
-    //if (tokenResponse.IsError)
-    //{
-    //  return Result<string>.Failure([AuthErrors.TokenResponseError(tokenResponse.Error!)], StatusCodes.Status500InternalServerError);
-    //}
 
     return Result<string>.Success(default!, StatusCodes.Status200OK);
   }
