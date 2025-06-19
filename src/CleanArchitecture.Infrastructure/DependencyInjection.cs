@@ -46,7 +46,7 @@ public static class DependencyInjection
        //options.UseInMemoryDatabase("database");
       options.UseNpgsql(connectionString);
     });
-
+    services.AddHttpClient("Gemini");
     // GUIDE: Put azure.env file in the CleanArchitecture.Presentation directory
     Env.Load("azure.env");
     string? azureBlobConnectionString = Environment.GetEnvironmentVariable("azureBlobConnectionString");
