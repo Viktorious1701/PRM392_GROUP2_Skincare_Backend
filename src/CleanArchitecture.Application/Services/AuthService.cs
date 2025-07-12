@@ -4,7 +4,12 @@ using CleanArchitecture.Application.Enums;
 using IdentityModel.Client;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace CleanArchitecture.Application.Services;
 
@@ -20,6 +25,7 @@ public class AuthService : IAuthService
   private readonly IValidator<ResetPasswordRequest> _resetPasswordValidator;
   private readonly IValidator<DTOs.Auth.RefreshTokenRequest> _refreshTokenValidator;
   private readonly ILogger<AuthService> _logger;
+  private readonly IConfiguration _configuration;
 
   public AuthService(UserManager<User> userManager,
                      IEmailService emailService,
@@ -30,7 +36,8 @@ public class AuthService : IAuthService
                      IValidator<ResetPasswordRequest> resetPasswordValidator,
                      IValidator<DTOs.Auth.RefreshTokenRequest> refreshTokenValidator,
                      IHttpContextAccessor httpContextAccessor,
-                     ILogger<AuthService> logger
+                     ILogger<AuthService> logger,
+                     IConfiguration configuration
                      )
   {
     _userManager = userManager;
@@ -43,6 +50,7 @@ public class AuthService : IAuthService
     _refreshTokenValidator = refreshTokenValidator;
     _httpContextAccessor = httpContextAccessor;
     _logger = logger;
+    _configuration = configuration;
   }
 
   private string GetAuthority()
@@ -195,65 +203,77 @@ public class AuthService : IAuthService
       return Result<AuthResponse>.Failure([AuthErrors.InvalidCredentials], StatusCodes.Status400BadRequest);
     }
 
+    var passwordValid = await _userManager.CheckPasswordAsync(user, request.Password!);
+    if (!passwordValid)
+    {
+      await _userManager.AccessFailedAsync(user);
+      return Result<AuthResponse>.Failure([AuthErrors.InvalidCredentials], StatusCodes.Status400BadRequest);
+    }
+
     if (await _userManager.IsLockedOutAsync(user))
     {
       return Result<AuthResponse>.Failure([AuthErrors.UserNotFound], StatusCodes.Status423Locked);
     }
 
-    var client = _httpClientFactory.CreateClient();
-    var authority = GetAuthority();
-    var disco = await client.GetDiscoveryDocumentAsync(authority);
-    if (disco.IsError)
-    {
-      _logger.LogError("Discovery document error: {Error}", disco.Error);
-      return Result<AuthResponse>.Failure([AuthErrors.IdentityServerFailed], StatusCodes.Status500InternalServerError);
-    }
+    await _userManager.ResetAccessFailedCountAsync(user);
 
-    var tokenResponse = await client.RequestPasswordTokenAsync(new PasswordTokenRequest
-    {
-      Address = disco.TokenEndpoint,
-      ClientId = "api_client",
-      ClientSecret = "secret",
-      UserName = request.UserName,
-      Password = request.Password,
-      Scope = "openid profile email roles API offline_access"
-    });
+    var claims = await GetClaims(user);
+    var accessToken = GenerateAccessToken(claims);
+    var refreshToken = GenerateRefreshToken();
 
-    if (tokenResponse.IsError)
-    {
-      if (tokenResponse.Error == "invalid_grant")
-      {
-        var potentiallyLockedUser = await _userManager.FindByNameAsync(request.UserName!);
-        if (potentiallyLockedUser != null && await _userManager.IsLockedOutAsync(potentiallyLockedUser))
-        {
-          return Result<AuthResponse>.Failure([AuthErrors.UserNotFound], StatusCodes.Status423Locked);
-        }
-        return Result<AuthResponse>.Failure([AuthErrors.InvalidCredentials], StatusCodes.Status400BadRequest);
-      }
-
-      _logger.LogError("Token response error: {Error}", tokenResponse.Error);
-      return Result<AuthResponse>.Failure([AuthErrors.TokenResponseError(tokenResponse.ErrorDescription!)], StatusCodes.Status400BadRequest);
-    }
-
-    var freshUser = await _userManager.FindByNameAsync(request.UserName!);
-    if (freshUser == null)
-    {
-      return Result<AuthResponse>.Failure([AuthErrors.UserNotFound], StatusCodes.Status500InternalServerError);
-    }
-
-    freshUser.RefreshToken = tokenResponse.RefreshToken;
-    freshUser.RefreshTokenExpiration = DateTime.UtcNow + TimeSpan.FromDays(30);
-    await _userManager.UpdateAsync(freshUser);
+    user.RefreshToken = refreshToken;
+    user.RefreshTokenExpiration = DateTime.UtcNow.AddDays(Convert.ToDouble(_configuration["JwtSettings:RefreshTokenExpirationDays"]));
+    await _userManager.UpdateAsync(user);
 
     return Result<AuthResponse>.Success(new AuthResponse
     {
-      AccessToken = tokenResponse.AccessToken!,
-      AccessTokenExpiration = tokenResponse.ExpiresIn,
-      RefreshToken = tokenResponse.RefreshToken!,
-      RefreshTokenExpiration = 2592000,
-      Email = freshUser.Email!,
-      UserName = freshUser.UserName!,
+      UserName = user.UserName,
+      Email = user.Email,
+      AccessToken = accessToken,
+      AccessTokenExpiration = Convert.ToInt32(_configuration["JwtSettings:AccessTokenExpirationMinutes"]) * 60,
+      RefreshToken = refreshToken,
+      RefreshTokenExpiration = Convert.ToInt32(_configuration["JwtSettings:RefreshTokenExpirationDays"]) * 24 * 60 * 60
     }, StatusCodes.Status200OK);
+  }
+
+  private async Task<List<Claim>> GetClaims(User user)
+  {
+    var claims = new List<Claim>
+      {
+          new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+          new Claim(JwtRegisteredClaimNames.Name, user.UserName!),
+          new Claim(JwtRegisteredClaimNames.Email, user.Email!),
+          new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+      };
+
+    var roles = await _userManager.GetRolesAsync(user);
+    claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+    return claims;
+  }
+
+  private string GenerateAccessToken(IEnumerable<Claim> claims)
+  {
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JwtSettings:Key"]!));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var expires = DateTime.UtcNow.AddMinutes(Convert.ToDouble(_configuration["JwtSettings:AccessTokenExpirationMinutes"]));
+
+    var token = new JwtSecurityToken(
+        issuer: _configuration["JwtSettings:Issuer"],
+        audience: _configuration["JwtSettings:Audience"],
+        claims: claims,
+        expires: expires,
+        signingCredentials: creds
+    );
+
+    return new JwtSecurityTokenHandler().WriteToken(token);
+  }
+
+  private string GenerateRefreshToken()
+  {
+    var randomNumber = new byte[32];
+    using var rng = RandomNumberGenerator.Create();
+    rng.GetBytes(randomNumber);
+    return Convert.ToBase64String(randomNumber);
   }
 
   public async Task<Result<AuthResponse>> RefreshTokenAsync(DTOs.Auth.RefreshTokenRequest request)
