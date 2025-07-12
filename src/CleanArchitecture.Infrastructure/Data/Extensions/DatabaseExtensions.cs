@@ -16,7 +16,9 @@ public static class DatabaseExtensions
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<Role>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
 
-    //context.Database.MigrateAsync().GetAwaiter().GetResult();
+    // This is the key change: it will apply any pending migrations to the database.
+    // The connection string from your docker-compose env_file will be used here.
+    await context.Database.MigrateAsync();
 
     await SeedAsync(context, roleManager, userManager);
   }

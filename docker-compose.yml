@@ -12,7 +12,9 @@
     env_file:
       - ./.env/dbcon.env
     depends_on:
-      - skincare.db
+      # This change ensures the API waits for the database to be healthy
+      skincare.db:
+        condition: service_healthy 
   
   skincare.db:
     image: postgres:17
@@ -25,6 +27,13 @@
       - POSTGRES_PASSWORD=secret
     volumes:
       - skincare-data:/var/lib/postgresql/data 
+    # Add a healthcheck to ensure the database is ready for connections
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d skincare"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
   
 volumes:
   skincare-data:
