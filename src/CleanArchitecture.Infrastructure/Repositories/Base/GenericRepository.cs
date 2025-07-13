@@ -1,4 +1,5 @@
-﻿using CleanArchitecture.Domain.RepositoryContracts.Base;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Infrastructure/Repositories/Base/GenericRepository.cs
+using CleanArchitecture.Domain.RepositoryContracts.Base;
 
 namespace CleanArchitecture.Infrastructure.Repositories.Base;
 
@@ -33,8 +34,10 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
 
   public virtual void Update(T entity)
   {
-    var tracker = _context.Set<T>().Attach(entity);
-    tracker.State = EntityState.Modified;
+    // The Entry method ensures that the entity is tracked and sets its state to Modified.
+    // This is the correct way to handle updates for entities that might already be tracked by the context,
+    // preventing "already tracked" exceptions.
+    _context.Entry(entity).State = EntityState.Modified;
   }
 
   public virtual void Remove(T entity)

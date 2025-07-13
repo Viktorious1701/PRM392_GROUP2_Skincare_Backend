@@ -34,21 +34,20 @@ namespace CleanArchitecture.Presentation.Endpoints
 
         if (vnPayResult.IsFailure)
         {
-          // Redirect to a frontend failure page
-          return Results.Redirect($"https://defleur.app/payment/failure?message={vnPayResult.Errors.First().Description}");
+          // Redirect to a frontend failure page using a custom app scheme.
+          return Results.Redirect($"defleur-app://payment/failure?message={vnPayResult.Errors.First().Description}");
         }
 
         var vnPayResponse = vnPayResult.Data!;
         var orderInfo = vnPayResponse.OrderDescription!;
 
-        // logic: This extracts the OrderId from the 'vnp_OrderInfo' string robustly.
         var searchString = "De Fleur - Payment for order id ";
         int startIndex = orderInfo.IndexOf(searchString);
         string orderIdStr = orderInfo.Substring(startIndex + searchString.Length);
 
         if (!Guid.TryParse(orderIdStr, out var orderId))
         {
-          return Results.Redirect($"https://defleur.app/payment/failure?message=InvalidOrderId");
+          return Results.Redirect($"defleur-app://payment/failure?message=InvalidOrderId");
         }
 
         var paymentData = new PaymentReturnData
@@ -62,12 +61,12 @@ namespace CleanArchitecture.Presentation.Endpoints
 
         if (orderResult.IsSuccess)
         {
-          // Redirect to a frontend success page with the order ID
-          return Results.Redirect($"https://defleur.app/payment/success?orderId={orderId}");
+          // Redirect to a frontend success page with the order ID using a custom app scheme.
+          return Results.Redirect($"defleur-app://payment/success?orderId={orderId}");
         }
 
-        // Redirect to a frontend failure page if order completion fails
-        return Results.Redirect($"https://defleur.app/payment/failure?message={orderResult.Errors.First().Description}");
+        // Redirect to a frontend failure page if order completion fails.
+        return Results.Redirect($"defleur-app://payment/failure?message={orderResult.Errors.First().Description}");
       })
       .WithName("ProcessVnPayReturn")
       .Produces(StatusCodes.Status302Found)

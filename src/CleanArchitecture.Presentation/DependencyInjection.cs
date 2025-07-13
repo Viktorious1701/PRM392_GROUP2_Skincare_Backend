@@ -94,9 +94,6 @@ public static class DependencyInjection
     })
       .AddJwtBearer(options =>
       {
-        // ** FIX: Configure JWT validation to use the symmetric key from appsettings.json **
-        // This ensures the token validator uses the same key as the token generator in AuthService,
-        // resolving the "The signature key was not found" error.
         options.TokenValidationParameters = new TokenValidationParameters
         {
           ValidateIssuer = true,
@@ -153,11 +150,17 @@ public static class DependencyInjection
       });
     }
 
-
     app.UseExceptionHandler(options => { });
     app.UseMiddleware<CustomErrorHandler>();
 
-    app.UseHttpsRedirection();
+    // FIX: Do not force HTTPS redirection in the development environment.
+    // This allows the Android emulator's WebView to communicate with the local backend
+    // over HTTP without encountering SSL certificate errors.
+    if (!app.Environment.IsDevelopment())
+    {
+      app.UseHttpsRedirection();
+    }
+
     app.UseRouting();
     // IdentityServer is not needed if AuthService handles tokens, but keep for other potential uses.
     app.UseIdentityServer();
