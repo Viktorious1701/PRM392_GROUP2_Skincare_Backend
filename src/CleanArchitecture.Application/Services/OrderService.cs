@@ -147,15 +147,8 @@ public class OrderService : IOrderService
       order.TotalPrice = totalPrice;
       order.Customer = customer!;
 
-      var orderResponse = MapToOrderResponse(order);
-      if (couponDiscount is not null)
-        orderResponse.CouponDiscount = couponDiscount;
-
-      // logic: The OrderService no longer directly generates the payment URL.
-      // This is now handled by the dedicated PaymentController which calls VnPayIntegrationService.
-      // The OrderService's role is to prepare and save the order entity.
+      // Save the order to the database to generate an Order ID
       _unitOfWork.Orders.Create(order);
-
       var saved = await _unitOfWork.CompleteAsync();
 
       if (!saved)
@@ -165,23 +158,54 @@ public class OrderService : IOrderService
           StatusCodes.Status500InternalServerError);
       }
 
+      // Now that the order is saved, map it to the response DTO
+      var orderResponse = MapToOrderResponse(order);
+      if (couponDiscount is not null)
+        orderResponse.CouponDiscount = couponDiscount;
+
+      // If the payment method is online, create the VNPay URL and add it to the response
+      if (request.PaymentMethod == PaymentMethods.ONLINE)
+      {
+        var vnPayRequest = new VnPayPaymentRequestDto
+        {
+          OrderId = order.Id,
+          Amount = order.TotalPrice,
+          PaymentMethod = request.PaymentMethod,
+        };
+
+        var context = _httpContextAccessor.HttpContext;
+        if (context == null)
+        {
+          _logger.LogError("HTTP context is null, cannot create payment URL.");
+          return Result<OrderResponse>.Failure([new Error("HttpContextError", "Unable to access HTTP context.")], StatusCodes.Status500InternalServerError);
+        }
+
+        var paymentUrlResult = _vnPayIntegrationService.CreatePaymentUrl(vnPayRequest, context);
+
+        if (paymentUrlResult.IsSuccess)
+        {
+          orderResponse.PaymentUrl = paymentUrlResult.Data;
+        }
+        else
+        {
+          _logger.LogError("Failed to create VNPay URL for Order ID {OrderId}: {Errors}", order.Id, string.Join(", ", paymentUrlResult.Errors.Select(e => e.Description)));
+          return Result<OrderResponse>.Failure(paymentUrlResult.Errors, paymentUrlResult.Status);
+        }
+      }
+
       return Result<OrderResponse>.Success(
         orderResponse,
         StatusCodes.Status200OK);
     }
     catch (Exception ex)
     {
+      _logger.LogError(ex, "An exception occurred during order initiation.");
       return Result<OrderResponse>.Failure(
         [new Error("Order.Create", ex.Message)],
         StatusCodes.Status500InternalServerError);
     }
   }
 
-  // NOTE: The rest of the OrderService.cs file remains the same.
-  // The provided snippet only shows the changed method, but I will include the full file content
-  // to ensure you have the complete, correct implementation.
-
-  // (The rest of the methods: InitiateOrder(CreateWalkInOrderRequest), CompleteOrder, GetAllOrdersAsync, etc. remain here)
   public async Task<Result<OrderResponse>> InitiateOrder(CreateWalkInOrderRequest request)
   {
     var validationResult = await _createWalkInOrderRequestValidator.ValidateAsync(request);
@@ -427,7 +451,7 @@ public class OrderService : IOrderService
       TrackingNumber = null,
       Status = OrderStatus.PENDING,
       PaymentMethod = request.PaymentMethod,
-    
+
       CreateAt = _timeZoneService.ConvertToLocalTime(DateTime.UtcNow),
       CreatedBy = cart.Customer.UserName,
       LastModified = _timeZoneService.ConvertToLocalTime(DateTime.UtcNow),
@@ -479,18 +503,23 @@ public class OrderService : IOrderService
         {
           Id = Guid.NewGuid(),
           OrderId = order.Id,
+          Order = order, // FIX: Set the navigation property to ensure relationship is saved.
           Method = PaymentMethods.ONLINE,
           TotalAmount = order.TotalPrice,
           Date = _timeZoneService.ConvertToLocalTime(DateTime.UtcNow),
           TransactionId = paymentData.TransactionId
         };
+
         AddPointToCustomer(order.TotalPrice, order.Customer);
         _unitOfWork.Payments.Create(payment);
 
         var cart = await _unitOfWork.Carts.GetCartByUserIdAsync(order.CustomerId);
         if (cart != null)
         {
-          _unitOfWork.Carts.Remove(cart);
+          // FIX: Instead of removing the cart, clear its items and reset the total price.
+          await _unitOfWork.Carts.ClearCartItemsAsync(cart.Id);
+          cart.TotalPrice = 0;
+          _unitOfWork.Carts.Update(cart);
         }
       }
       else
@@ -503,9 +532,9 @@ public class OrderService : IOrderService
         }
       }
 
-      order.DeliveryDate = DateTime.UtcNow;
       order.LastModified = DateTime.UtcNow;
-      order.LastModifiedBy = _claimsService.CurrentUserId.ToString();
+      // FIX: Set LastModifiedBy to the customer's username, as this action is performed by the customer.
+      order.LastModifiedBy = order.Customer.UserName;
       _unitOfWork.Orders.Update(order);
 
       var saved = await _unitOfWork.CompleteAsync();
@@ -522,6 +551,7 @@ public class OrderService : IOrderService
     }
     catch (Exception ex)
     {
+      _logger.LogError(ex, "An exception occurred while completing order {OrderId}", orderId);
       return Result<OrderResponse>.Failure(
           new List<Error> { new Error("Order.Complete", ex.Message) },
           StatusCodes.Status500InternalServerError);

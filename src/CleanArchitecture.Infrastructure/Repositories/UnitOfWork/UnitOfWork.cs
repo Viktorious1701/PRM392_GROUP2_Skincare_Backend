@@ -82,7 +82,8 @@ public class UnitOfWork : IUnitOfWork
     }
     catch (Exception ex)
     {
-      _transaction.RollbackAsync();
+      // FIX: Ensure the rollback operation is awaited to prevent potential race conditions.
+      await _transaction.RollbackAsync();
       _logger.LogError($"Database saved failed at {_timeZoneService.ConvertToLocalTime(DateTime.UtcNow)}\n" +
                        $"with error: {ex.Message}");
       return false;
