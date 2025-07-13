@@ -23,10 +23,6 @@ public class CreateOrderRequestValidator : AbstractValidator<CreateOnlineOrderRe
         .NotEmpty().WithMessage("Currency is required.")
         .Matches("^(VND|USD)$").WithMessage("Currency must be 'VND' or 'USD'.");
 
-    RuleFor(x => x.WardCode)
-        .NotEmpty().WithMessage("Ward code is required.");
-
-    RuleFor(x => x.DistrictId)
-        .GreaterThan(0).WithMessage("District ID is required.");
+ 
   }
 }

@@ -1,9 +1,8 @@
-﻿using Carter;
-using CleanArchitecture.Application.DTOs.Order;
-using CleanArchitecture.Application.DTOs.Payment;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Presentation/Endpoints/PaymentController.cs
 using CleanArchitecture.Application.DTOs.VnPay;
-using CleanArchitecture.Application.Interfaces;
+using CleanArchitecture.Application.ServiceContracts;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 
@@ -15,26 +14,11 @@ namespace CleanArchitecture.Presentation.Endpoints
     {
       var group = app.MapGroup("api/payment").WithTags("Payment Management");
 
-      #region Get All Payments API
-      group.MapGet("/", async (IPaymentService paymentService) =>
-      {
-        var result = await paymentService.GetAllPaymentsAsync();
-        return result.Match("Retrieved Payments Successfully.");
-      })
-      .WithName("GetAllPayments")
-      .Produces<ApiResponse<List<PaymentResponse>>>(StatusCodes.Status200OK)
-      .ProducesProblem(StatusCodes.Status401Unauthorized)
-      .ProducesProblem(StatusCodes.Status500InternalServerError)
-      .WithSummary("GetAllPayments")
-      .WithDescription("Get All Payments")
-      .RequireAuthorization();
-      #endregion
-
       #region Create Payment URL Endpoint
-      group.MapPost("/payment-url", (IVnPayIntegrationService vnPayIntegrationService, HttpContext context, VnPayPaymentRequestDto request) =>
+      group.MapPost("/create-payment-url", (IVnPayIntegrationService vnPayIntegrationService, HttpContext context, VnPayPaymentRequestDto request) =>
       {
         var result = vnPayIntegrationService.CreatePaymentUrl(request, context);
-        return result.Match("Payment URL created successfully.");
+        return result.Match(Message.SUCCESSFUL_CREATED("Payment URL"));
       })
       .WithName("CreatePaymentUrl")
       .Produces<ApiResponse<string>>(StatusCodes.Status200OK)
@@ -46,40 +30,50 @@ namespace CleanArchitecture.Presentation.Endpoints
       #region Process VNPay Return Endpoint
       group.MapGet("/vnpay-return", async (IVnPayIntegrationService vnPayIntegrationService, IOrderService orderService, HttpContext context) =>
       {
-        // Process the VNPay callback.
         var vnPayResult = await vnPayIntegrationService.ProcessReturnAsync(context.Request.Query);
+
         if (vnPayResult.IsFailure)
         {
-          return vnPayResult.Match("Payment processing failed.");
+          // Redirect to a frontend failure page
+          return Results.Redirect($"https://defleur.app/payment/failure?message={vnPayResult.Errors.First().Description}");
         }
 
-        var vnPayResponse = vnPayResult.Data;
-        // Validate that the TransactionOrderId is a valid GUID (the order's ID).
-        if (!Guid.TryParse(vnPayResponse.TransactionOrderId, out var orderId))
+        var vnPayResponse = vnPayResult.Data!;
+        var orderInfo = vnPayResponse.OrderDescription!;
+
+        // logic: This extracts the OrderId from the 'vnp_OrderInfo' string robustly.
+        var searchString = "De Fleur - Payment for order id ";
+        int startIndex = orderInfo.IndexOf(searchString);
+        string orderIdStr = orderInfo.Substring(startIndex + searchString.Length);
+
+        if (!Guid.TryParse(orderIdStr, out var orderId))
         {
-          return Results.BadRequest(ApiResponse<VnPayPaymentResponseDto>.FailureResponse(
-            new List<Error> { new Error("InvalidOrderId", "Invalid Order Id returned from VNPay") },
-            "Invalid Order Id returned from VNPay."));
+          return Results.Redirect($"https://defleur.app/payment/failure?message=InvalidOrderId");
         }
 
-        // Map the VNPay response directly to the PaymentReturnData.
-        // (If you prefer, you can use vnPayResponse directly if it has all the needed data.)
-        var paymentReturnData = new PaymentReturnData
+        var paymentData = new PaymentReturnData
         {
           TransactionId = vnPayResponse.TransactionId,
           TotalAmount = vnPayResponse.TotalAmount,
           ResponseCode = vnPayResponse.ResponseCode
         };
 
-        // Complete the order using the VNPay response.
-        var orderResult = await orderService.CompleteOrder(orderId, vnPayResponse.ResponseCode ?? string.Empty, paymentReturnData);
-        return orderResult.Match("Order completed successfully.");
+        var orderResult = await orderService.CompleteOrder(orderId, vnPayResponse.ResponseCode ?? string.Empty, paymentData);
+
+        if (orderResult.IsSuccess)
+        {
+          // Redirect to a frontend success page with the order ID
+          return Results.Redirect($"https://defleur.app/payment/success?orderId={orderId}");
+        }
+
+        // Redirect to a frontend failure page if order completion fails
+        return Results.Redirect($"https://defleur.app/payment/failure?message={orderResult.Errors.First().Description}");
       })
       .WithName("ProcessVnPayReturn")
-      .Produces<ApiResponse<VnPayPaymentResponseDto>>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status302Found)
       .ProducesProblem(StatusCodes.Status400BadRequest)
       .WithSummary("Process VNPay Return")
-      .WithDescription("Processes the VNPay return response, validates the signature, and updates the order.");
+      .WithDescription("Processes the VNPay return response, validates the signature, and updates the order status.");
       #endregion
     }
   }

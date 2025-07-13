@@ -13,6 +13,7 @@ namespace CleanArchitecture.Application.ServiceContracts
     Task<Result<OrderResponse>> InitiateOrder(CreateOnlineOrderRequest request);
     Task<Result<OrderResponse>> InitiateOrder(CreateWalkInOrderRequest request);
     Task<Result<OrderResponse>> CompleteOrder(Guid orderId, string paymentStatus, PaymentReturnData paymentData);
+    Task<Result<OrderResponse>> InitiateSimpleOrder(CreateOnlineOrderRequest request);
     Task CleanupExpiredOrders();
 
   }

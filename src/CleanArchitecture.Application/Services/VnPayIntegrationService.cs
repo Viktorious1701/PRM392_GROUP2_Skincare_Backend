@@ -2,120 +2,73 @@
 using Application.Library;
 using CleanArchitecture.Application.DTOs.VnPay;
 using CleanArchitecture.Application.ServiceContracts;
-using CleanArchitecture.Domain.Entities;
-using CleanArchitecture.Domain.RepositoryContracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
+using System.Globalization;
 
 namespace CleanArchitecture.Application.Services
 {
   public class VnPayIntegrationService : IVnPayIntegrationService
   {
     private readonly IConfiguration _configuration;
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly VnPayLibrary _vnPayLibrary;
+    private readonly ITimeZoneService _timeZoneService;
 
-    public VnPayIntegrationService(IConfiguration configuration, IUnitOfWork unitOfWork)
+    public VnPayIntegrationService(IConfiguration configuration, ITimeZoneService timeZoneService)
     {
       _configuration = configuration;
-      _unitOfWork = unitOfWork;
-      _vnPayLibrary = new VnPayLibrary();
+      _timeZoneService = timeZoneService;
     }
 
-    public Result<string> CreatePaymentUrl(VnPayPaymentRequestDto request, HttpContext context)
+    public Result<string> CreatePaymentUrl(VnPayPaymentRequestDto paymentRequest, HttpContext context)
     {
       try
       {
-        var timeZoneId = _configuration["TimeZoneId"] ?? "SE Asia Standard Time";
-        var tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-        var timeNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
-        string txnRef = $"{request.OrderId}_{timeNow:yyyyMMddHHmmss}";
-        var ipAddress = "192.168.1.1";
+        var urlCallBack = _configuration["Vnpay:ReturnUrl"];
+        var timeZoneById = TimeZoneInfo.FindSystemTimeZoneById(_configuration["TimeZoneId"]);
+        var timeNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZoneById);
+        var tick = DateTime.Now.Ticks.ToString();
+        var pay = new VnPayLibrary();
 
-        // Add all business-related VNPay parameters first.
-        _vnPayLibrary.AddRequestData("vnp_Version", "2.1.0");
-        _vnPayLibrary.AddRequestData("vnp_Command", "pay");
-        _vnPayLibrary.AddRequestData("vnp_TmnCode", _configuration["Vnpay:TmnCode"]);
-        _vnPayLibrary.AddRequestData("vnp_Amount", (request.Amount * 100).ToString("F0"));
-        _vnPayLibrary.AddRequestData("vnp_CreateDate", timeNow.ToString("yyyyMMddHHmmss"));
-        _vnPayLibrary.AddRequestData("vnp_CurrCode", "VND");
-        _vnPayLibrary.AddRequestData("vnp_IpAddr", ipAddress);
-        _vnPayLibrary.AddRequestData("vnp_Locale", "vn");
-        _vnPayLibrary.AddRequestData("vnp_OrderInfo", $"Thanh toan don hang {txnRef}");
-        _vnPayLibrary.AddRequestData("vnp_OrderType", "other");
-        _vnPayLibrary.AddRequestData("vnp_ReturnUrl", _configuration["Vnpay:ReturnUrl"]);
-        _vnPayLibrary.AddRequestData("vnp_TxnRef", txnRef);
+        // Logic: All request data is added here, exactly mirroring the Cursus project's implementation.
+        pay.AddRequestData("vnp_Version", _configuration["Vnpay:Version"]);
+        pay.AddRequestData("vnp_Command", _configuration["Vnpay:Command"]);
+        pay.AddRequestData("vnp_TmnCode", _configuration["Vnpay:TmnCode"]);
+        pay.AddRequestData("vnp_Amount", ((long)paymentRequest.Amount * 100).ToString());
+        pay.AddRequestData("vnp_CreateDate", timeNow.ToString("yyyyMMddHHmmss"));
+        pay.AddRequestData("vnp_CurrCode", _configuration["Vnpay:CurrCode"]);
+        pay.AddRequestData("vnp_IpAddr", pay.GetIpAddress(context));
+        pay.AddRequestData("vnp_Locale", _configuration["Vnpay:Locale"]);
+        // Logic: Changed the OrderInfo text to exactly match the working "Cursus" example.
+        pay.AddRequestData("vnp_OrderInfo", $"Cursus - Payment for order id {paymentRequest.OrderId}");
+        pay.AddRequestData("vnp_OrderType", "800000"); // A common value for 'other' payment types.
+        pay.AddRequestData("vnp_ReturnUrl", urlCallBack);
+        pay.AddRequestData("vnp_TxnRef", tick);
 
-        // IMPORTANT: The vnp_SecureHashType must be added here, before the URL is created.
-        // The VnPayLibrary will correctly exclude it from the hash calculation itself.
-        _vnPayLibrary.AddRequestData("vnp_SecureHashType", "SHA512");
-
-        // The CreateRequestUrl method will now have all parameters sorted correctly before hashing.
-        var paymentUrl = _vnPayLibrary.CreateRequestUrl(
-            _configuration["Vnpay:BaseUrl"],
-            _configuration["Vnpay:HashSecret"]);
+        var paymentUrl = pay.CreateRequestUrl(_configuration["Vnpay:BaseUrl"], _configuration["Vnpay:HashSecret"]);
 
         return Result<string>.Success(paymentUrl, StatusCodes.Status200OK);
       }
       catch (Exception ex)
       {
-        var errors = new List<Error> { new Error("Payment.CreatePayment", ex.Message) };
-        return Result<string>.Failure(errors, StatusCodes.Status400BadRequest);
+        return Result<string>.Failure(new List<Error> { new Error("VnPay.Error", ex.Message) }, 500);
       }
     }
 
-    public async Task<Result<VnPayPaymentResponseDto>> ProcessReturnAsync(IQueryCollection query)
+    public Task<Result<VnPayPaymentResponseDto>> ProcessReturnAsync(IQueryCollection collections)
     {
-      try
+      var pay = new VnPayLibrary();
+      var response = pay.GetFullResponseData(collections, _configuration["Vnpay:HashSecret"]);
+
+      if (!response.Success)
       {
-        var response = _vnPayLibrary.GetFullResponseData(query, _configuration["Vnpay:HashSecret"]);
-
-        if (!response.Success)
-        {
-          return Result<VnPayPaymentResponseDto>.Failure(
-              new List<Error> { VnPayErrors.SignatureValidationFailed },
-              StatusCodes.Status400BadRequest);
-        }
-
-        string txnRef = response.TransactionOrderId ?? string.Empty;
-        string[] parts = txnRef.Split('_');
-        if (parts.Length == 0 || !Guid.TryParse(parts[0], out var orderId))
-        {
-          response.Success = false;
-          response.OrderDescription = "Invalid Order Id in response";
-          return Result<VnPayPaymentResponseDto>.Failure(
-              new List<Error> { VnPayErrors.InvalidOrderId },
-              StatusCodes.Status400BadRequest);
-        }
-
-        if (!decimal.TryParse(response.TotalAmount, out var amountInt))
-        {
-          amountInt = 0;
-        }
-        decimal totalAmount = amountInt / 100m;
-
-        var payment = new Payment
-        {
-          OrderId = orderId,
-          TransactionId = response.TransactionId,
-          Method = "VNPay",
-          TotalAmount = totalAmount,
-          Date = DateTime.Now
-        };
-
-        await _unitOfWork.Payments.CreateAsync(payment);
-
-        return Result<VnPayPaymentResponseDto>.Success(response, StatusCodes.Status200OK);
+        return Task.FromResult(Result<VnPayPaymentResponseDto>.Failure(
+            new List<Error> { VnPayErrors.SignatureValidationFailed },
+            StatusCodes.Status400BadRequest));
       }
-      catch (Exception ex)
-      {
-        var errors = new List<Error> { new Error("Payment.VnPayReturn", ex.Message) };
-        return Result<VnPayPaymentResponseDto>.Failure(errors, StatusCodes.Status400BadRequest);
-      }
+
+      return Task.FromResult(Result<VnPayPaymentResponseDto>.Success(response, StatusCodes.Status200OK));
     }
   }
 }
