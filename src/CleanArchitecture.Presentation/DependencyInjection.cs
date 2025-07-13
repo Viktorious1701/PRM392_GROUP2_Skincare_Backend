@@ -1,15 +1,18 @@
-﻿using CleanArchitecture.Application.Services;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Presentation/DependencyInjection.cs
+using CleanArchitecture.Application.Services;
 using CleanArchitecture.Domain.Entities;
 using CleanArchitecture.Infrastructure.Data;
 using CleanArchitecture.Presentation.Middlewares;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Scalar.AspNetCore;
 using System.Reflection;
+using System.Text;
 
 namespace CleanArchitecture.Presentation;
 
@@ -91,10 +94,18 @@ public static class DependencyInjection
     })
       .AddJwtBearer(options =>
       {
-        options.Authority = "https://api.localhost:5051";
+        // ** FIX: Configure JWT validation to use the symmetric key from appsettings.json **
+        // This ensures the token validator uses the same key as the token generator in AuthService,
+        // resolving the "The signature key was not found" error.
         options.TokenValidationParameters = new TokenValidationParameters
         {
-          ValidateAudience = false,
+          ValidateIssuer = true,
+          ValidateAudience = true,
+          ValidateLifetime = true,
+          ValidateIssuerSigningKey = true,
+          ValidIssuer = config["JwtSettings:Issuer"],
+          ValidAudience = config["JwtSettings:Audience"],
+          IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["JwtSettings:Key"]!))
         };
       });
 
@@ -148,6 +159,7 @@ public static class DependencyInjection
 
     app.UseHttpsRedirection();
     app.UseRouting();
+    // IdentityServer is not needed if AuthService handles tokens, but keep for other potential uses.
     app.UseIdentityServer();
     app.UseCors("AllowAll"); // ✅ Apply CORS globally
     app.UseAuthentication();

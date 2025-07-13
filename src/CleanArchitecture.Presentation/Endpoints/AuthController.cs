@@ -1,4 +1,5 @@
-﻿using CleanArchitecture.Application.DTOs.Auth;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Presentation/Endpoints/AuthController.cs
+using CleanArchitecture.Application.DTOs.Auth;
 using CleanArchitecture.Application.Enums;
 using CleanArchitecture.Domain.Entities;
 using IdentityServer4;
@@ -135,8 +136,9 @@ public class AuthController : ICarterModule
     .ProducesProblem(StatusCodes.Status401Unauthorized)
     .ProducesProblem(StatusCodes.Status500InternalServerError)
     .WithSummary("RefreshToken")
-    .WithDescription("Enter Your Refresh Token To Refresh The Access Token")
-    .RequireAuthorization();
+    .WithDescription("Enter Your Refresh Token To Refresh The Access Token");
+    // **FIX:** Removed .RequireAuthorization() to prevent an infinite loop.
+    // The endpoint is secured by the validity of the refresh token itself.
     #endregion
 
     #region External Login API

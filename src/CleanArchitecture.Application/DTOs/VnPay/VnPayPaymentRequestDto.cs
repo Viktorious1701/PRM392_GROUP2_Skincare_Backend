@@ -1,4 +1,5 @@
-﻿using System;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Application/DTOs/VnPay/VnPayPaymentRequestDto.cs
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,6 +11,6 @@ namespace CleanArchitecture.Application.DTOs.VnPay
   {
     public Guid OrderId { get; set; }
     public string PaymentMethod { get; set; }
-    public float Amount { get; set; }
+    public decimal Amount { get; set; }
   }
 }

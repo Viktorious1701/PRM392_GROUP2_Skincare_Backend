@@ -1,10 +1,12 @@
-﻿using Application.Library;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Application/Services/VnPayIntegrationService.cs
+using Application.Library;
 using CleanArchitecture.Application.DTOs.VnPay;
 using CleanArchitecture.Application.ServiceContracts;
 using CleanArchitecture.Domain.Entities;
 using CleanArchitecture.Domain.RepositoryContracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -28,30 +30,31 @@ namespace CleanArchitecture.Application.Services
     {
       try
       {
-        // Convert UTC to configured Vietnamese timezone.
         var timeZoneId = _configuration["TimeZoneId"] ?? "SE Asia Standard Time";
         var tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
         var timeNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        string txnRef = $"{request.OrderId}_{timeNow:yyyyMMddHHmmss}";
+        var ipAddress = "192.168.1.1";
 
-        // Use OrderId (as a GUID string) as transaction reference.
-        string txnRef = request.OrderId.ToString();
-
-        // Set up the required VNPay parameters.
+        // Add all business-related VNPay parameters first.
         _vnPayLibrary.AddRequestData("vnp_Version", "2.1.0");
         _vnPayLibrary.AddRequestData("vnp_Command", "pay");
         _vnPayLibrary.AddRequestData("vnp_TmnCode", _configuration["Vnpay:TmnCode"]);
-        // Multiply by 100 (assuming request.Amount is in VND)
-        _vnPayLibrary.AddRequestData("vnp_Amount", ((int)request.Amount * 100).ToString());
+        _vnPayLibrary.AddRequestData("vnp_Amount", (request.Amount * 100).ToString("F0"));
         _vnPayLibrary.AddRequestData("vnp_CreateDate", timeNow.ToString("yyyyMMddHHmmss"));
         _vnPayLibrary.AddRequestData("vnp_CurrCode", "VND");
-        _vnPayLibrary.AddRequestData("vnp_IpAddr", _vnPayLibrary.GetIpAddress(context));
+        _vnPayLibrary.AddRequestData("vnp_IpAddr", ipAddress);
         _vnPayLibrary.AddRequestData("vnp_Locale", "vn");
-        // Use OrderId in the OrderInfo for display.
-        _vnPayLibrary.AddRequestData("vnp_OrderInfo", $"Payment for order {request.OrderId}");
+        _vnPayLibrary.AddRequestData("vnp_OrderInfo", $"Thanh toan don hang {txnRef}");
         _vnPayLibrary.AddRequestData("vnp_OrderType", "other");
         _vnPayLibrary.AddRequestData("vnp_ReturnUrl", _configuration["Vnpay:ReturnUrl"]);
         _vnPayLibrary.AddRequestData("vnp_TxnRef", txnRef);
 
+        // IMPORTANT: The vnp_SecureHashType must be added here, before the URL is created.
+        // The VnPayLibrary will correctly exclude it from the hash calculation itself.
+        _vnPayLibrary.AddRequestData("vnp_SecureHashType", "SHA512");
+
+        // The CreateRequestUrl method will now have all parameters sorted correctly before hashing.
         var paymentUrl = _vnPayLibrary.CreateRequestUrl(
             _configuration["Vnpay:BaseUrl"],
             _configuration["Vnpay:HashSecret"]);
@@ -69,7 +72,6 @@ namespace CleanArchitecture.Application.Services
     {
       try
       {
-        // Process the VNPay callback and validate the secure hash.
         var response = _vnPayLibrary.GetFullResponseData(query, _configuration["Vnpay:HashSecret"]);
 
         if (!response.Success)
@@ -79,8 +81,9 @@ namespace CleanArchitecture.Application.Services
               StatusCodes.Status400BadRequest);
         }
 
-        // Expect vnp_TxnRef to be a GUID (representing the OrderId).
-        if (!Guid.TryParse(response.TransactionOrderId, out var orderId))
+        string txnRef = response.TransactionOrderId ?? string.Empty;
+        string[] parts = txnRef.Split('_');
+        if (parts.Length == 0 || !Guid.TryParse(parts[0], out var orderId))
         {
           response.Success = false;
           response.OrderDescription = "Invalid Order Id in response";
@@ -89,21 +92,19 @@ namespace CleanArchitecture.Application.Services
               StatusCodes.Status400BadRequest);
         }
 
-        // Read the total amount from vnp_Amount and convert back to VND.
         if (!decimal.TryParse(response.TotalAmount, out var amountInt))
         {
           amountInt = 0;
         }
         decimal totalAmount = amountInt / 100m;
 
-        // Create and save a Payment entity.
         var payment = new Payment
         {
           OrderId = orderId,
-          TransactionId = response.TransactionId, // VNPAY's transaction number
+          TransactionId = response.TransactionId,
           Method = "VNPay",
           TotalAmount = totalAmount,
-          Date = DateTime.Now // Or parse vnp_CreateDate if needed.
+          Date = DateTime.Now
         };
 
         await _unitOfWork.Payments.CreateAsync(payment);

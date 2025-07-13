@@ -1,4 +1,5 @@
-﻿using CleanArchitecture.Application.Constants;
+﻿// PRM392_GROUP2_Skincare_Backend/src/CleanArchitecture.Application/Services/OrderService.cs
+using CleanArchitecture.Application.Constants;
 using CleanArchitecture.Application.DTOs.GHN.Request;
 using CleanArchitecture.Application.DTOs.GHN.Response;
 using CleanArchitecture.Application.DTOs.Order;
@@ -24,6 +25,8 @@ public class OrderService : IOrderService
   private readonly IValidator<CreateOnlineOrderRequest> _createOrderRequestValidator;
   private readonly IValidator<CreateWalkInOrderRequest> _createWalkInOrderRequestValidator;
   private readonly UserManager<User> _userManager;
+  private readonly ILogger<OrderService> _logger;
+
 
   // Exchange rate from USD to VND - should ideally come from a service
   private const decimal USD_TO_VND_RATE = 24850;
@@ -38,7 +41,8 @@ public class OrderService : IOrderService
     IHttpContextAccessor httpContextAccessor,
     IValidator<CreateOnlineOrderRequest> createOrderRequestValidator,
     UserManager<User> userManager, IValidator<CreateWalkInOrderRequest> createWalkInOrderRequestValidator,
-    IEnumerable<IInvoiceGenerateStrategy> invoiceGenerateStrategies)
+    IEnumerable<IInvoiceGenerateStrategy> invoiceGenerateStrategies,
+    ILogger<OrderService> logger)
   {
     _unitOfWork = unitOfWork;
     _errorFactory = errorFactory;
@@ -51,6 +55,7 @@ public class OrderService : IOrderService
     _userManager = userManager;
     _createWalkInOrderRequestValidator = createWalkInOrderRequestValidator;
     _invoiceGenerateStrategies = invoiceGenerateStrategies;
+    _logger = logger;
   }
 
   // 1. Initiate Order (First step of checkout)
@@ -89,9 +94,6 @@ public class OrderService : IOrderService
           inventoryResult.Status);
       }
 
-      // Calculate shipping dimensions
-      var shippingDetails = CalculateShippingDetails(cart.CartItems);
-
       var customer = await _userManager.FindByIdAsync(_claimsService.CurrentUserId.ToString());
 
       // Create order
@@ -124,14 +126,14 @@ public class OrderService : IOrderService
           var error = _errorFactory.CreateNotFoundError("Coupon");
           return Result<OrderResponse>.Failure([error.err], StatusCodes.Status404NotFound);
         }
-        
-        var userCoupon  = await _unitOfWork.UserCoupons.GetByIdAsync(_claimsService.CurrentUserId, coupon.Id);
+
+        var userCoupon = await _unitOfWork.UserCoupons.GetByIdAsync(_claimsService.CurrentUserId, coupon.Id);
         if (userCoupon is null || userCoupon.Quantity <= 0)
         {
           return Result<OrderResponse>.Failure([new Error("UserCoupon.NoCoupon", "User doesnt have this coupon")],
             StatusCodes.Status400BadRequest);
         }
-        
+
         if (totalPrice < coupon.MinimumOrderPrice)
         {
           return Result<OrderResponse>.Failure([
@@ -154,40 +156,22 @@ public class OrderService : IOrderService
       }
 
       order.TotalPrice = totalPrice;
-      // Get Shop Info for Create a Shipping Order
-      var shopInfo = await _ghnService.GetStoreInformationAsync();
-
-      decimal codAmount = request.PaymentMethod == PaymentMethods.COD ? totalPrice : 0;
-      int paymentTypeId = request.PaymentMethod == PaymentMethods.COD ? 2 : 1;
-
-      // Create Shipping Order in GHN
-      var ghnOrderResult = await _ghnService.CreateShippingOrderAsync(MapToCreateShippingOrderRequest(order,
-        shopInfo.Data!, request, shippingDetails, customer!, codAmount, paymentTypeId));
-      if (!ghnOrderResult.IsSuccess)
-      {
-        return Result<OrderResponse>.Failure(ghnOrderResult.Errors, ghnOrderResult.Status);
-      }
-
-      // Add shipping fee to total price
-      order.TrackingNumber = ghnOrderResult.Data!.OrderCode;
-      order.TotalPrice = totalPrice + ghnOrderResult.Data.TotalFee;
       order.Customer = customer!;
-      order.ETA = ghnOrderResult.Data!.ExpectedDeliveryTime;
-      order.DeliveryDate = null;
 
       // Generate order response
       var orderResponse = MapToOrderResponse(order);
       if (couponDiscount is not null)
         orderResponse.CouponDiscount = couponDiscount;
 
-      // Handle payment method specific logic
+      // Handle payment method specific logic to get the payment URL
       await HandlePaymentMethod(request.PaymentMethod, order, orderResponse);
-      
-      // Save order to database
+
+      // Save order to database with PENDING status
       _unitOfWork.Orders.Create(order);
 
-      // Clear customer cart after creating the order
-      _unitOfWork.Carts.Remove(cart);
+      // **FIX**: DO NOT clear the cart here. It should only be cleared after a successful payment.
+      // _unitOfWork.Carts.Remove(cart);
+
       var saved = await _unitOfWork.CompleteAsync();
 
       if (!saved)
@@ -196,15 +180,6 @@ public class OrderService : IOrderService
           [new Error("Order.Create", "Failed to save order")],
           StatusCodes.Status500InternalServerError);
       }
-
-      var invoiceStrategy = _invoiceGenerateStrategies.OfType<OnlineInvoiceStrategy>().FirstOrDefault();
-      byte[] invoice = [];
-      if (invoiceStrategy != null)
-      {
-        invoice = await invoiceStrategy.GenerateAsync(order, _unitOfWork);
-      }
-
-      orderResponse.Invoice = invoice;
 
       return Result<OrderResponse>.Success(
         orderResponse,
@@ -245,7 +220,10 @@ public class OrderService : IOrderService
 
       orderItems.Add(new OrderItem()
       {
-        CosmeticId = cosmetic.Id, SellingPrice = sellingPrice * orderItem.Value, Quantity = orderItem.Value
+        CosmeticId = cosmetic.Id,
+        SellingPrice = sellingPrice * orderItem.Value,
+        Quantity = orderItem.Value
+
       });
     }
 
@@ -315,7 +293,7 @@ public class OrderService : IOrderService
         return Result<OrderResponse>.Failure(errors, StatusCodes.Status500InternalServerError);
       }
     }
-    
+
 
     var order = new Order()
     {
@@ -329,7 +307,8 @@ public class OrderService : IOrderService
       TotalPrice = totalPrice,
       SubTotal = subTotal,
       OrderItems = orderItems,
-      Status = OrderStatus.COMPLETED
+      Status = OrderStatus.COMPLETED,
+      PaymentMethod = request.PaymentMethod
     };
 
     // Add Point to user account
@@ -366,7 +345,9 @@ public class OrderService : IOrderService
   {
     var vnPayRequest = new VnPayPaymentRequestDto
     {
-      OrderId = order.Id, PaymentMethod = PaymentMethods.ONLINE, Amount = (float)order.TotalPrice
+      OrderId = order.Id,
+      PaymentMethod = PaymentMethods.ONLINE,
+      Amount = order.TotalPrice // Use decimal directly
     };
 
     var httpContext = _httpContextAccessor.HttpContext;
@@ -468,19 +449,19 @@ public class OrderService : IOrderService
     return Result<bool>.Success(true, StatusCodes.Status200OK);
   }
 
-  private ShippingDetails CalculateShippingDetails(IEnumerable<CartItem> cartItems)
+  private ShippingDetails CalculateShippingDetails(IEnumerable<OrderItem> orderItems)
   {
     var totalWeight = 0;
     var totalLength = 0;
     var totalWidth = 0;
     var totalHeight = 0;
 
-    foreach (var cartItem in cartItems)
+    foreach (var orderItem in orderItems)
     {
-      totalWeight += cartItem.Cosmetic.Weight * cartItem.Quantity;
-      totalLength = Math.Max(totalLength, cartItem.Cosmetic.Length);
-      totalWidth = Math.Max(totalWidth, cartItem.Cosmetic.Width);
-      totalHeight += cartItem.Cosmetic.Height * cartItem.Quantity; // Stack height
+      totalWeight += orderItem.Cosmetic.Weight * orderItem.Quantity;
+      totalLength = Math.Max(totalLength, orderItem.Cosmetic.Length);
+      totalWidth = Math.Max(totalWidth, orderItem.Cosmetic.Width);
+      totalHeight += orderItem.Cosmetic.Height * orderItem.Quantity; // Stack height
     }
 
     return new ShippingDetails { Weight = totalWeight, Length = totalLength, Width = totalWidth, Height = totalHeight };
@@ -498,13 +479,19 @@ public class OrderService : IOrderService
       BillingAddress = request.BillingAddress,
       TrackingNumber = null,
       Status = OrderStatus.PENDING,
+      PaymentMethod = request.PaymentMethod,
+      // Save the selected address codes to the order
+      WardCode = request.WardCode,
+      DistrictId = request.DistrictId,
       CreateAt = _timeZoneService.ConvertToLocalTime(DateTime.UtcNow),
       CreatedBy = cart.Customer.UserName,
       LastModified = _timeZoneService.ConvertToLocalTime(DateTime.UtcNow),
       LastModifiedBy = cart.Customer.UserName,
       OrderItems = cart.CartItems.Select(ci => new OrderItem
       {
-        Cosmetic = ci.Cosmetic, CosmeticId = ci.CosmeticId, Quantity = ci.Quantity
+        Cosmetic = ci.Cosmetic,
+        CosmeticId = ci.CosmeticId,
+        Quantity = ci.Quantity
       }).ToList(),
       // Set default delivery date to 7 days from now
       //DeliveryDate = _timeZoneService.ConvertToLocalTime(DateTime.UtcNow.AddDays(7))
@@ -525,7 +512,9 @@ public class OrderService : IOrderService
     {
       var vnPayRequest = new VnPayPaymentRequestDto
       {
-        OrderId = order.Id, PaymentMethod = PaymentMethods.ONLINE, Amount = (float)order.TotalPrice
+        OrderId = order.Id,
+        PaymentMethod = PaymentMethods.ONLINE,
+        Amount = order.TotalPrice // Use decimal directly
       };
 
       var httpContext = _httpContextAccessor.HttpContext;
@@ -560,6 +549,26 @@ public class OrderService : IOrderService
       {
         order.Status = OrderStatus.CONFIRMED;
 
+        // **Create shipping order only AFTER successful payment**
+        var shopInfo = await _ghnService.GetStoreInformationAsync();
+        var shippingDetails = CalculateShippingDetails(order.OrderItems);
+        decimal codAmount = order.PaymentMethod == PaymentMethods.COD ? order.TotalPrice : 0;
+        int paymentTypeId = order.PaymentMethod == PaymentMethods.COD ? 2 : 1;
+
+        var ghnOrderResult = await _ghnService.CreateShippingOrderAsync(MapToCreateShippingOrderRequest(order,
+            shopInfo.Data!, shippingDetails, codAmount, paymentTypeId));
+
+        if (ghnOrderResult.IsSuccess)
+        {
+          order.TrackingNumber = ghnOrderResult.Data!.OrderCode;
+          order.ETA = ghnOrderResult.Data!.ExpectedDeliveryTime;
+        }
+        else
+        {
+          // Log the error but don't fail the entire order completion
+          _logger.LogError("Failed to create GHN shipping order for Order ID {OrderId}: {Error}", order.Id, string.Join(", ", ghnOrderResult.Errors.Select(e => e.Description)));
+        }
+
         // Create a payment record for this order
         var payment = new Payment
         {
@@ -575,8 +584,12 @@ public class OrderService : IOrderService
         // Save payment record using your PaymentRepository
         _unitOfWork.Payments.Create(payment);
 
-        // Optionally, clear the cart after successful payment
-        await _unitOfWork.Carts.ClearCartItemsAsync(order.CustomerId);
+        // **FIX:** Clear the user's cart after successful payment.
+        var cart = await _unitOfWork.Carts.GetCartByUserIdAsync(order.CustomerId);
+        if (cart != null)
+        {
+          _unitOfWork.Carts.Remove(cart);
+        }
       }
       else
       {
@@ -843,14 +856,15 @@ public class OrderService : IOrderService
       LastModifiedBy = order.LastModifiedBy,
       OrderItems = order.OrderItems.Select(oi => new OrderItemResponse
       {
-        CosmeticId = oi.CosmeticId, Quantity = oi.Quantity, SellingPrice = oi.SellingPrice
+        CosmeticId = oi.CosmeticId,
+        Quantity = oi.Quantity,
+        SellingPrice = oi.SellingPrice
       }).ToList()
     };
   }
 
   public static CreateGHNOrderRequest MapToCreateShippingOrderRequest(Order order, StoreData shopInfo,
-    CreateOnlineOrderRequest onlineOrderRequest, ShippingDetails details, User customer, decimal codAmount,
-    int paymentTypeId)
+     ShippingDetails details, decimal codAmount, int paymentTypeId)
   {
     var request = new CreateGHNOrderRequest
     {
@@ -868,11 +882,12 @@ public class OrderService : IOrderService
       ReturnDistrictId = null, // Set to null or map if applicable
       ReturnWardCode = "", // Set to empty or map if applicable
       ClientOrderCode = "", // Use Order ID as client order code
-      ToName = customer.FirstName + customer.LastName, // Use customer's name as recipient name
-      ToPhone = customer.PhoneNumber, // Use customer's phone as recipient phone
-      ToAddress = order.ShippingAddress, // Use shipping address as recipient address
-      ToWardCode = onlineOrderRequest.WardCode, // Default ward code or map if applicable
-      ToDistrictId = onlineOrderRequest.DistrictId, // Default district ID or map if applicable
+      ToName = order.Customer.FirstName + " " + order.Customer.LastName,
+      ToPhone = order.Customer.PhoneNumber,
+      ToAddress = order.ShippingAddress,
+      // Use the saved address codes from the order
+      ToWardCode = order.WardCode,
+      ToDistrictId = order.DistrictId,
       CodAmount = (int)codAmount, // Use total price as COD amount
       Content = "Order from De Fleur", // Custom content
       Weight = details.Weight, // Calculate total weight
