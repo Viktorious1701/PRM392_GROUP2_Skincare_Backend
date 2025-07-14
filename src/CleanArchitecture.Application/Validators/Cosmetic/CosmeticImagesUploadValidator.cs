@@ -10,11 +10,21 @@ public class CosmeticImagesUploadValidator : AbstractValidator<CosmeticImagesUpl
     RuleFor(x => x.CosmeticId)
         .NotEmpty().WithMessage("Cosmetic ID is required.");
 
+    // This is the primary rule that checks if the list exists and is not empty.
     RuleFor(x => x.Images)
-        .NotEmpty().WithMessage("At least one image is required.")
-        .Must(Images => Images.Count <= 10).WithMessage("You can upload up to 10 images.");
+        .NotNull().WithMessage("Image list cannot be null.")
+        .NotEmpty().WithMessage("At least one image is required.");
 
-    RuleForEach(x => x.Images).SetValidator(new ImageFileValidator());
+    // This rule, which was causing the crash, is now conditionally executed.
+    // It will ONLY run if the Images list is not null, preventing the NullReferenceException.
+    RuleFor(x => x.Images)
+        .Must(images => images.Count <= 10).WithMessage("You can upload up to 10 images.")
+        .When(x => x.Images != null); // This is the crucial fix.
+
+    // This rule for validating each file is also made conditional for extra safety.
+    RuleForEach(x => x.Images)
+        .SetValidator(new ImageFileValidator())
+        .When(x => x.Images != null);
   }
 }
 

@@ -558,6 +558,7 @@ internal class InitialData
       var skinTypes = SkinTypes.ToList();
       var cosmeticTypes = CosmeticTypes.ToList();
       var stores = Stores.ToList(); // Get the list of stores to assign their IDs
+      var cosmetics = new List<Cosmetic>();
 
       var guids = new List<Guid>
       {
@@ -658,27 +659,28 @@ internal class InitialData
         new Guid("EE853A4D-F553-483B-885F-97F4D404BDCE") // Retinoid
       };
 
+      // FIX: Use a single Random instance.
+      // REASON: Creating a new Random instance in a tight loop can result in it being seeded with the same clock value, producing non-random numbers.
       var rand = new Random();
-
-      var cosmetics = new List<Cosmetic>();
       int guidIndex = 0;
-      // We'll use Brand[0] for cleanser and moisturizer, and Brand[1] for sunscreen and retinoid.
+
       foreach (var skin in skinTypes)
       {
-        // Randomize brand index for each product type
         int cleanserBrandIndex = rand.Next(brands.Count);
         int moisturizerBrandIndex = rand.Next(brands.Count);
         int sunscreenBrandIndex = rand.Next(brands.Count);
         int retinoidBrandIndex = rand.Next(brands.Count);
 
-        // Cleanser for this skin type - Linked to the first store
+        // Cleanser
         cosmetics.Add(new Cosmetic
         {
           Id = guids[guidIndex++],
           Name = $"{brands[cleanserBrandIndex].Name} {skin.Name} Cleanser",
           BrandId = brands[cleanserBrandIndex].Id,
           SkinTypeId = skin.Id,
-          StoreId = stores[0].Id, // Link to the first store
+          // FIX: Randomly assign a store to every cosmetic.
+          // REASON: This ensures all products have a physical location associated with them, fixing the gaps in the original logic.
+          StoreId = stores[rand.Next(stores.Count)].Id,
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Cleansers").Id,
           Gender = true,
           Notice = "A gentle cleanser to prepare the skin.",
@@ -694,14 +696,14 @@ internal class InitialData
           VolumeUnit = (VolumeUnit)0
         });
 
-        // Moisturizer for this skin type - Linked to the second store
+        // Moisturizer
         cosmetics.Add(new Cosmetic
         {
           Id = guids[guidIndex++],
           Name = $"{brands[moisturizerBrandIndex].Name} {skin.Name} Moisturizer",
           BrandId = brands[moisturizerBrandIndex].Id,
           SkinTypeId = skin.Id,
-          StoreId = stores[1].Id, // Link to the second store
+          StoreId = stores[rand.Next(stores.Count)].Id,
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Moisturizers").Id,
           Gender = true,
           Notice = "Hydrates and nourishes the skin.",
@@ -717,14 +719,14 @@ internal class InitialData
           VolumeUnit = (VolumeUnit)0
         });
 
-        // Sunscreen for this skin type - Linked to the third store
+        // Sunscreen
         cosmetics.Add(new Cosmetic
         {
           Id = guids[guidIndex++],
           Name = $"{brands[sunscreenBrandIndex].Name} {skin.Name} Sunscreen",
           BrandId = brands[sunscreenBrandIndex].Id,
           SkinTypeId = skin.Id,
-          StoreId = stores[2].Id, // Link to the third store
+          StoreId = stores[rand.Next(stores.Count)].Id,
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Sunscreens").Id,
           Gender = true,
           Notice = "Provides broad-spectrum protection.",
@@ -740,14 +742,14 @@ internal class InitialData
           VolumeUnit = (VolumeUnit)0
         });
 
-        // Retinoid (using the Serums type) for this skin type - No store assigned
+        // Retinoid
         cosmetics.Add(new Cosmetic
         {
           Id = guids[guidIndex++],
           Name = $"{brands[retinoidBrandIndex].Name} {skin.Name} Anti-Aging Retinoid",
           BrandId = brands[retinoidBrandIndex].Id,
           SkinTypeId = skin.Id,
-          StoreId = null, // No store assigned
+          StoreId = stores[rand.Next(stores.Count)].Id, // FIX: Assign a random store instead of null.
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Serums").Id,
           Gender = true,
           Notice = "Helps reduce wrinkles and improve skin texture.",
@@ -764,7 +766,7 @@ internal class InitialData
         });
       }
 
-      // Add the extra cosmetics with some linked to stores
+      // Add the extra cosmetics with stores assigned
       cosmetics.AddRange(new List<Cosmetic>
       {
         new Cosmetic
@@ -773,7 +775,7 @@ internal class InitialData
           Name = $"{brands[0].Name} Hydrating Face Cream",
           BrandId = brands[0].Id,
           SkinTypeId = skinTypes[0].Id,
-          StoreId = stores[0].Id, // Link to Flagship Store
+          StoreId = stores[0].Id,
           CosmeticTypeId = cosmeticTypes[0].Id,
           Gender = true,
           Notice = "Apply twice daily for best results.",
@@ -794,7 +796,7 @@ internal class InitialData
           Name = $"{brands[2].Name} Gentle Facial Cleanser",
           BrandId = brands[2].Id,
           SkinTypeId = skinTypes[1].Id,
-          StoreId = stores[1].Id, // Link to Crescent Mall Store
+          StoreId = stores[1].Id,
           CosmeticTypeId = cosmeticTypes[1].Id,
           Gender = true,
           Notice = "Suitable for daily use.",
@@ -815,7 +817,7 @@ internal class InitialData
           Name = $"{brands[3].Name} Revitalizing Serum",
           BrandId = brands[3].Id,
           SkinTypeId = skinTypes[1].Id,
-          StoreId = null, // No store
+          StoreId = stores[rand.Next(stores.Count)].Id, // FIX: Assign a random store instead of null.
           CosmeticTypeId = cosmeticTypes.First(ct => ct.Name == "Serums").Id,
           Gender = true,
           Notice = "Apply a few drops after cleansing.",
@@ -872,14 +874,14 @@ internal class InitialData
         new Guid("57934496-4d7c-4e21-aaf6-f42c023033ae")
       };
 
-      var events = new List<Event>() { 
+      var events = new List<Event>() {
         new Event() {
         Id = guids[0],
         Name = "Black Friday",
         Description = "Last friday of November",
         DiscountPercentage = 30
         } ,
-        
+
         new Event()
         {
           Id = guids[1],
@@ -892,7 +894,7 @@ internal class InitialData
           Id = guids[2],
           Name = "World skin health day",
           Description = "Discount world skin health day on 8th July",
-          DiscountPercentage = 20 
+          DiscountPercentage = 20
         },
         new Event()
         {
@@ -1549,13 +1551,19 @@ internal class InitialData
         // Morning Routine for this skin type
         var morningRoutine = new Routine
         {
-          Id = guids[guidIndex++], SkinTypeId = skin.Id, Title = $"{skin.Name} Morning Routine", Period = "Morning",
+          Id = guids[guidIndex++],
+          SkinTypeId = skin.Id,
+          Title = $"{skin.Name} Morning Routine",
+          Period = "Morning",
         };
 
         // Evening Routine for this skin type
         var eveningRoutine = new Routine
         {
-          Id = guids[guidIndex++], SkinTypeId = skin.Id, Title = $"{skin.Name} Evening Routine", Period = "Evening",
+          Id = guids[guidIndex++],
+          SkinTypeId = skin.Id,
+          Title = $"{skin.Name} Evening Routine",
+          Period = "Evening",
         };
 
         // Add to the list
@@ -1792,7 +1800,10 @@ internal class InitialData
           // Morning Routine Steps
           steps.Add(new RoutineStep
           {
-            Id = guids[guidIndex++], RoutineId = routine.Id, CosmeticId = cleanser?.Id ?? Guid.Empty, StepNumber = 1
+            Id = guids[guidIndex++],
+            RoutineId = routine.Id,
+            CosmeticId = cleanser?.Id ?? Guid.Empty,
+            StepNumber = 1
           });
           steps.Add(new RoutineStep
           {
@@ -1803,7 +1814,10 @@ internal class InitialData
           });
           steps.Add(new RoutineStep
           {
-            Id = guids[guidIndex++], RoutineId = routine.Id, CosmeticId = sunscreen?.Id ?? Guid.Empty, StepNumber = 3
+            Id = guids[guidIndex++],
+            RoutineId = routine.Id,
+            CosmeticId = sunscreen?.Id ?? Guid.Empty,
+            StepNumber = 3
           });
         }
         else if (routine.Period.Equals("Evening", StringComparison.OrdinalIgnoreCase))
@@ -1811,7 +1825,10 @@ internal class InitialData
           // Evening Routine Steps
           steps.Add(new RoutineStep
           {
-            Id = guids[guidIndex++], RoutineId = routine.Id, CosmeticId = cleanser?.Id ?? Guid.Empty, StepNumber = 1
+            Id = guids[guidIndex++],
+            RoutineId = routine.Id,
+            CosmeticId = cleanser?.Id ?? Guid.Empty,
+            StepNumber = 1
           });
           steps.Add(new RoutineStep
           {
@@ -1822,7 +1839,10 @@ internal class InitialData
           });
           steps.Add(new RoutineStep
           {
-            Id = guids[guidIndex++], RoutineId = routine.Id, CosmeticId = retinoid?.Id ?? Guid.Empty, StepNumber = 3
+            Id = guids[guidIndex++],
+            RoutineId = routine.Id,
+            CosmeticId = retinoid?.Id ?? Guid.Empty,
+            StepNumber = 3
           });
         }
       }

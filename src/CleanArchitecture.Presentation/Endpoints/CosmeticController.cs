@@ -110,11 +110,19 @@ public class CosmeticController : ICarterModule
     #endregion
 
     #region Upload Cosmetic Images API
-    group.MapPost("/{id}/images", async (ICosmeticService service, Guid id, [FromForm] CosmeticImagesUploadRequest request, [FromQuery] string? imageType = "") =>
-      
+    // FIX: Changed the endpoint to directly accept IFormFileCollection.
+    // This is the most reliable way to handle file uploads with ASP.NET Core Minimal APIs.
+    // The model binder will now correctly populate the 'images' parameter with the uploaded files.
+    group.MapPost("/{id}/images", async (ICosmeticService service, Guid id, IFormFileCollection images, [FromQuery] string? imageType = "") =>
     {
-      // Ensure the ID in the route matches the request
-      request.CosmeticId = id;
+      // REASON: We manually construct the request object here. This avoids the model binding confusion
+      // that was causing the 'Images' property to be null.
+      var request = new CosmeticImagesUploadRequest
+      {
+        CosmeticId = id,
+        Images = images.ToList()
+      };
+
       var result = await service.UploadCosmeticImages(request, imageType);
       return result.Match(Message.SUCCESSFUL_CREATED("Cosmetic Images"));
     })
@@ -129,4 +137,3 @@ public class CosmeticController : ICarterModule
     #endregion
   }
 }
-
